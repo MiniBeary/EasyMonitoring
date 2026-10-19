@@ -1,7 +1,7 @@
 # EasyMonitoring — план реализации
 
 - Дата: 2026-10-19
-- Статус: реализовано; автоматические проверки пройдены, ручные визуальные проверки — в `docs/qa-checklist.md`
+- Статус: реализовано и оптимизировано по ресурсам; автоматические проверки и замеры — в `docs/qa-checklist.md`, ручные визуальные проверки — там же
 - Проект: `EasyMonitoring`
 - Рабочий каталог: `C:\Users\Admin\Documents\CanvasTTY\Monitor`
 
@@ -184,10 +184,11 @@ static extern bool GetSystemTimes(out FILETIME idle, out FILETIME kernel, out FI
 ### 6.4. Сглаживание
 
 - Храним последние 3 значения CPU load и GPU load.
-- Среднее считается по доступным значениям.
+- Первое значение становится единственным замером.
 - CPU load всегда доступен; GPU load может быть null.
-- Температуры и RAM показываем последними значениями без усреднения.
+- Температуры и RAM показываем последними замерами без усреднения.
 - Анимация использует средний CPU load.
+- CPU load и анимация опрашиваются раз в 1 с; LHM (температуры CPU/GPU, GPU load) и RAM — раз в 2 с для минимального потребления ресурсов. Ссылки на hardware/сенсоры LHM кэшируются при открытии.
 
 ### 6.5. Animation interval
 
@@ -430,3 +431,12 @@ dotnet publish src/EasyMonitoring.App -c Release -r win-x64 --self-contained tru
 - `qa`: GitHub-remote у репозитория отсутствует, поэтому issue-файлинг через `gh` не применяется; результаты QA ведутся в `docs/qa-checklist.md`.
 - `find-skills`: релевантного готового скилла для WinForms/tray-монитора в каталоге `skills.sh` не найдено; реализация выполняется напрямую.
 - Коммиты не создаются без отдельного указания.
+
+## 14. Дополнение: тема меню и автозапуск
+
+- Контекстное меню оформлено через `App/UI/MenuTheme` и `EasyMonitoringMenuRenderer`: фон `#3C3C3C`, белый текст (включая disabled), белая галочка, отдельные цвета hover/pressed/separator.
+- Добавлен пункт `Start with Windows` с галочкой.
+- Автозапуск реализован через Task Scheduler, задача `EasyMonitoring`: `LogonTrigger`, `InteractiveToken`, `HighestAvailable`, `ExecutionTimeLimit=PT0S`. Это позволяет стартовать в трее без UAC-запроса при входе.
+- Состояние читается через `schtasks /Query /TN EasyMonitoring /XML`; включение/выключение выполняются в фоне, ошибки логируются и показываются balloon tip.
+- `--autostart-check` — QA-режим: временно создаёт задачу, проверяет XML и удаляет её.
+- Добавлены `AutostartController` и `AutostartControllerTests` (64 теста Core).

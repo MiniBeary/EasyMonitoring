@@ -11,8 +11,11 @@
   - `CPU: 23% | 58 °C`
   - `GPU: 5% | 47 °C`
   - `RAM: 8.2 / 31.9 GB (26%)`
+  - `Start with Windows` (галочка автозапуска)
   - `Exit`
-- Обновление метрик раз в секунду, среднее по 3 замерам.
+- Контекстное меню: тёмно-серый фон, белый текст и белая галочка.
+- Пункт `Start with Windows` создаёт задачу Task Scheduler — при входе в Windows приложение запускается без UAC-запроса.
+- CPU load обновляется раз в секунду (среднее по 3 замерам); температура CPU/GPU, GPU load и RAM — раз в 2 секунды.
 - Один экземпляр приложения.
 - Работает только в трее, без главного окна.
 
@@ -53,6 +56,10 @@ dotnet publish src/EasyMonitoring.App -c Release -r win-x64 --self-contained tru
 
 При старте Windows покажет UAC-запрос. После запуска приложение появляется в области уведомлений. Выход — через правый клик → `Exit`.
 
+## Автозапуск
+
+Правый клик → `Start with Windows`. Приложение создаёт задачу планировщика `EasyMonitoring` с `HighestAvailable` и `InteractiveToken`: при следующем входе в Windows оно запустится в трее без UAC-запроса. Снятие галочки удаляет задачу. Если exe переместить, включите галочку заново — задача будет пересоздана с новым путём.
+
 ## Источники метрик
 
 | Метрика | Источник |
@@ -64,22 +71,45 @@ dotnet publish src/EasyMonitoring.App -c Release -r win-x64 --self-contained tru
 
 CPU load не использует `PerformanceCounter`, потому что на локализованной Windows имена счётчиков могут не совпадать.
 
+## Ресурсы
+
+Замеры в простое на этой машине (Windows 11, Ryzen 9 5900X, Release-сборка, окно 5 минут, средние значения):
+
+| Метрика | EasyMonitoring | RunCat 365 3.6.0 |
+| --- | --- | --- |
+| CPU, % одного ядра | ~1.6 | ~8.2 |
+| CPU, % суммарно по 24 потокам | ~0.066 | ~0.34 |
+| Working set | ~85 MB | ~80 MB |
+| Private bytes | ~39 MB | ~43 MB |
+| Handles | ~411 | ~621 |
+| GDI objects | 26 | 36 |
+| Threads (peak) | 18 | 11 |
+| Размер поставки | 112 MB (один exe) | 141 MB (MSIX) |
+
+RunCat 365 опрашивает больше типов сенсоров и имеет настройки; цифры при нагрузке и на другой машине будут отличаться.
+
 ## Диагностика
 
-Для QA предусмотрены два режима, которые не показывают трей и завершаются сами:
+Для QA предусмотрены три режима, которые не показывают трей и завершаются сами:
 
 ```powershell
 # Проверка значений CPU/GPU/RAM
 .\artifacts\publish\EasyMonitoring.exe --diagnostics
 
-# Проверка объектов tray UI: текст, пункты меню, кадры анимации
+# Проверка объектов tray UI: текст, пункты меню, цвета, кадры анимации
 .\artifacts\publish\EasyMonitoring.exe --ui-check
+
+# Проверка автозапуска: включает, проверяет XML задачи и выключает её
+.\artifacts\publish\EasyMonitoring.exe --autostart-check
 ```
 
 Результаты:
 
 - `%LOCALAPPDATA%\EasyMonitoring\diagnostics.txt`
 - `%LOCALAPPDATA%\EasyMonitoring\ui-diagnostics.txt`
+- `%LOCALAPPDATA%\EasyMonitoring\autostart-diagnostics.txt`
+
+`--autostart-check` временно создаёт реальную задачу `EasyMonitoring` и удаляет её в конце; остальные режимы ничего не меняют.
 
 Лог ошибок: `%LOCALAPPDATA%\EasyMonitoring\EasyMonitoring.log`.
 

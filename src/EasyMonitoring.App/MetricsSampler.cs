@@ -6,11 +6,16 @@ namespace EasyMonitoring.App;
 
 internal sealed class MetricsSampler : IDisposable
 {
+    private const int SlowSampleEvery = 2;
+
     private readonly CancellationTokenSource _cancellation = new();
     private readonly CpuLoadCalculator _cpuLoadCalculator = new();
     private readonly MetricsAggregator _aggregator = new(sampleWindow: 3);
     private readonly LhmMetricsSource _lhm = new();
     private Task? _samplingTask;
+    private LhmReading _cachedLhm = new(null, null, null, null);
+    private MemoryStatus? _cachedMemory;
+    private int _tick;
     private bool _cpuErrorLogged;
     private bool _ramErrorLogged;
     private bool _disposed;
@@ -60,18 +65,25 @@ internal sealed class MetricsSampler : IDisposable
 
     private MetricsSnapshot Sample()
     {
+        _tick++;
         var cpuLoad = TryReadCpu();
-        var lhm = _lhm.Read();
-        var memory = TryReadMemory();
+
+        // CPU load drives animation and is sampled every second.
+        // LHM (CPU/GPU temperature, GPU load) and RAM change slowly enough for 2 s.
+        if (_tick % SlowSampleEvery == 1)
+        {
+            _cachedLhm = _lhm.Read();
+            _cachedMemory = TryReadMemory();
+        }
 
         var raw = new MetricsSnapshot(
             CpuLoadPercent: cpuLoad,
-            CpuTemperatureC: lhm.CpuTemperatureC,
-            GpuLoadPercent: lhm.GpuLoadPercent,
-            GpuTemperatureC: lhm.GpuTemperatureC,
-            RamUsedGb: memory?.UsedGb,
-            RamTotalGb: memory?.TotalGb,
-            RamUsedPercent: memory?.UsedPercent);
+            CpuTemperatureC: _cachedLhm.CpuTemperatureC,
+            GpuLoadPercent: _cachedLhm.GpuLoadPercent,
+            GpuTemperatureC: _cachedLhm.GpuTemperatureC,
+            RamUsedGb: _cachedMemory?.UsedGb,
+            RamTotalGb: _cachedMemory?.TotalGb,
+            RamUsedPercent: _cachedMemory?.UsedPercent);
 
         return _aggregator.Add(raw);
     }
