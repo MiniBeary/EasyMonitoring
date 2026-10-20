@@ -142,3 +142,10 @@ DisabledState: True
 - [x] Published exe: `--diagnostics`, `--ui-check`, `--autostart-check` — exit 0, лог пуст.
 - [x] Локальный SHA256 published exe: `2b5cadfcd401342b86d7e4e5ae48c6b8368dbe159fb126ca49bf5321557ef5a8`.
 - [x] Release workflow переведён на стабильный GitHub release (без `--prerelease`).
+
+## Релиз v1.0.1
+
+- [x] Release `v1.0.1` создан как stable/Latest: https://github.com/MiniBeary/EasyMonitoring/releases/tag/v1.0.1
+- [x] В релизе есть `EasyMonitoring-win-x64.exe` (117 483 775 байт) и `SHA256SUMS.txt`.
+- [x] SHA256 скачанного exe совпадает: `ef40533b476da209a3ae5f6f44ab402e7ed557496dd008f107fe940cadf93597`.
+- [x] Скачанный release-exe: version `1.0.1.0` / `1.0.1`, `--ui-check` exit 0, лог пуст.
