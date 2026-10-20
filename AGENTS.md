@@ -72,5 +72,5 @@ After building or publishing:
 - GitHub: `MiniBeary/EasyMonitoring` (public), default branch `main`; local commits use `MiniBear <184402887+MiniBeary@users.noreply.github.com>`.
 - `bin/`, `obj/`, `artifacts/`, `*.user`, and logs are ignored. Do not commit the published exe.
 - `README.md` is the user-facing guide; `docs/easymonitoring-plan.md` is the implementation plan/status; `docs/qa-checklist.md` is the current QA record; `docs/runcat365-3.6.0-analysis.md` is reference analysis, not a build input.
-- Release process: push a `v*` tag; `.github/workflows/release.yml` publishes the single-file exe, writes `SHA256SUMS.txt`, and creates a pre-release. Do not upload the exe manually unless the workflow fails.
+- Release process: push a `v*` tag; `.github/workflows/release.yml` publishes the single-file exe, writes `SHA256SUMS.txt`, and creates a GitHub release. Do not upload the exe manually unless the workflow fails.
 - `LICENSE` is MIT; third-party notices and full license texts are in `THIRD-PARTY-NOTICES.md` and `docs/licenses/`.

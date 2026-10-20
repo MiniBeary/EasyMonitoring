@@ -51,7 +51,7 @@ jobs:
           "$hash  EasyMonitoring-win-x64.exe" | Set-Content -Encoding ascii artifacts/publish/SHA256SUMS.txt
           Get-Content artifacts/publish/SHA256SUMS.txt
 
-      - name: Create GitHub pre-release
+      - name: Create GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,5 +61,4 @@ jobs:
           artifacts/publish/SHA256SUMS.txt
           --title "EasyMonitoring ${{ github.ref_name }}"
           --notes-file docs/release-notes.md
-          --prerelease
           --verify-tag

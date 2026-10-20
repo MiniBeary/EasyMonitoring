@@ -134,3 +134,11 @@ DisabledState: True
 - [x] Репозиторий публичный, default branch `main`, MIT определяется GitHub, issues включены, wiki/discussions выключены.
 - [x] Добавлены topics: `windows`, `dotnet`, `winforms`, `tray`, `system-monitor`, `cpu`, `gpu`, `ram`, `temperature`, `librehardwaremonitor`, `desktop-app`.
 - [x] Dependabot создал PR для Actions и тестовых NuGet-зависимостей; обновления Actions и зелёные test-only PR применены.
+
+## Подготовка v1.0.1
+
+- [x] Версия exe: `1.0.1.0` / `1.0.1`.
+- [x] `dotnet build` — 0 ошибок, 0 предупреждений; `dotnet test` — 62 Core + 2 App = 64/64.
+- [x] Published exe: `--diagnostics`, `--ui-check`, `--autostart-check` — exit 0, лог пуст.
+- [x] Локальный SHA256 published exe: `2b5cadfcd401342b86d7e4e5ae48c6b8368dbe159fb126ca49bf5321557ef5a8`.
+- [x] Release workflow переведён на стабильный GitHub release (без `--prerelease`).
