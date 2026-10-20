@@ -25,7 +25,7 @@ dotnet publish src/EasyMonitoring.App -c Release -r win-x64 --self-contained tru
   -p:DebugType=None -p:DebugSymbols=false -o artifacts/publish
 ```
 
-There is no CI, linter, or formatter config; build + tests + diagnostic modes are the verification path.
+CI runs on GitHub Actions: `.github/workflows/build.yml` restores, builds, and tests on pushes to `main` and pull requests. `.github/workflows/release.yml` builds the release exe on `v*` tags. There is no linter or formatter config; build + tests + diagnostic modes are the verification path.
 
 ## Runtime prerequisites
 
@@ -67,6 +67,8 @@ After building or publishing:
 
 ## Repo state
 
-- No git remote and no CI workflows; the repo is local.
+- GitHub: `MiniBeary/EasyMonitoring` (public), default branch `main`; local commits use `MiniBear <184402887+MiniBeary@users.noreply.github.com>`.
 - `bin/`, `obj/`, `artifacts/`, `*.user`, and logs are ignored. Do not commit the published exe.
-- `README.md` is the user-facing guide; `docs/easymonitoring-plan.md` is the implementation plan/status; `docs/runcat365-3.6.0-analysis.md` is reference analysis, not a build input.
+- `README.md` is the user-facing guide; `docs/easymonitoring-plan.md` is the implementation plan/status; `docs/qa-checklist.md` is the current QA record; `docs/runcat365-3.6.0-analysis.md` is reference analysis, not a build input.
+- Release process: push a `v*` tag; `.github/workflows/release.yml` publishes the single-file exe, writes `SHA256SUMS.txt`, and creates a pre-release. Do not upload the exe manually unless the workflow fails.
+- `LICENSE` is MIT; third-party notices and full license texts are in `THIRD-PARTY-NOTICES.md` and `docs/licenses/`.

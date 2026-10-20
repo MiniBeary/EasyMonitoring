@@ -1,0 +1,91 @@
+name: Bug report
+description: Сообщить о проблеме в EasyMonitoring
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Перед созданием issue проверьте, что используется последний release.
+        Не прикладывайте токены, пароли и другие секреты.
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия EasyMonitoring
+      description: Например, v1.0.0
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Версия Windows
+      options:
+        - Windows 11
+        - Windows 10
+        - Windows Server
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: CPU и GPU
+      placeholder: Ryzen 9 5900X, RTX 3080
+    validations:
+      required: true
+
+  - type: input
+    id: pawnio
+    attributes:
+      label: Версия PawnIO
+      description: Если установлена; проверьте `winget list --id namazso.PawnIO`
+      placeholder: 2.2.0
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      placeholder: |
+        1. Запустить EasyMonitoring
+        2. Открыть меню
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Диагностика
+      description: |
+        Приложите `diagnostics.txt`, `ui-diagnostics.txt` и `EasyMonitoring.log`
+        из `%LOCALAPPDATA%\EasyMonitoring\`, если они относятся к проблеме.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Проверки
+      options:
+        - label: Используется последний release
+          required: true
+        - label: Проблема воспроизводится после перезапуска приложения
+          required: false
+        - label: В отчёте нет секретов и персональных данных
+          required: true

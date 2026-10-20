@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Releases
+    url: https://github.com/MiniBeary/EasyMonitoring/releases
+    about: Скачать последнюю сборку и проверить SHA256
+  - name: QA checklist
+    url: https://github.com/MiniBeary/EasyMonitoring/blob/main/docs/qa-checklist.md
+    about: Текущие результаты проверок и известные ограничения
