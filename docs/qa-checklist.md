@@ -113,9 +113,13 @@ DisabledState: True
 
 ## GitHub и релиз
 
-- [ ] `build.yml` проходит на GitHub Actions для `main`.
-- [ ] README и `docs/assets/menu.png` корректно отображаются на GitHub.
-- [ ] Release `v1.0.0` создан как pre-release.
-- [ ] В релизе есть `EasyMonitoring-win-x64.exe` и `SHA256SUMS.txt`.
-- [ ] SHA256 скачанного exe совпадает с `SHA256SUMS.txt`.
-- [ ] В репозитории нет `artifacts/`, `bin/`, `obj/` и опубликованного exe.
+- [x] `build.yml` проходит на GitHub Actions для `main`: run `39346229450`, success.
+- [x] README и `docs/assets/menu.png` отдаются GitHub: HTTP 200, изображение 201×150.
+- [x] Release `v1.0.0` создан как pre-release: https://github.com/MiniBeary/EasyMonitoring/releases/tag/v1.0.0
+- [x] В релизе есть `EasyMonitoring-win-x64.exe` (117 456 639 байт) и `SHA256SUMS.txt`.
+- [x] SHA256 скачанного exe совпадает: `6924f872ae29dd700a868b93c72b748519658543c1e922a789e27a459b1ad38a`.
+- [x] Скачанный release-exe проходит `--ui-check` с кодом 0; логи пусты.
+- [x] В репозитории нет `artifacts/`, `bin/`, `obj/` и опубликованного exe.
+- [x] Репозиторий публичный, default branch `main`, MIT определяется GitHub, issues включены, wiki/discussions выключены.
+- [x] Добавлены topics: `windows`, `dotnet`, `winforms`, `tray`, `system-monitor`, `cpu`, `gpu`, `ram`, `temperature`, `librehardwaremonitor`, `desktop-app`.
+- [x] Dependabot создал PR для Actions и тестовых NuGet-зависимостей; обновления Actions и зелёные test-only PR применены.
