@@ -1,4 +1,4 @@
-# EasyMonitoring — QA checklist
+﻿# EasyMonitoring — QA checklist
 
 - Дата автоматической проверки: 2026-10-20
 - Машина: Windows 11 build 26200, Ryzen 9 5900X, RTX 3080 Ti
@@ -6,7 +6,7 @@
 
 ## Автоматические проверки
 
-- [x] `dotnet test EasyMonitoring.sln -c Release` — 64/64 теста Core проходят.
+- [x] `dotnet test EasyMonitoring.sln -c Release` — 62 Core + 2 App = 64/64 теста проходят.
 - [x] `dotnet build EasyMonitoring.sln -c Release` — 0 ошибок, 0 предупреждений.
 - [x] `dotnet publish ...` — создан self-contained single-file `artifacts/publish/EasyMonitoring.exe`.
 - [x] `--diagnostics` на опубликованном exe — получены CPU load/temp, GPU load/temp, RAM.
@@ -25,21 +25,21 @@
 
 ```text
 EasyMonitoring diagnostics
-CPU: 2% | 71 °C
-GPU: 11% | 46 °C
-RAM: 13.2 / 31.9 GB (41%)
+CPU: 7% | 75 °C
+GPU: 7% | 47 °C
+RAM: 16.7 / 31.9 GB (52%)
 
 EasyMonitoring UI diagnostics
 Snapshots: 1
-TrayText: CPU: 2% | 70 °C
-Menu[0]: CPU: 2% | 70 °C
+TrayText: CPU: 7% | 74 °C
+Menu[0]: CPU: 7% | 74 °C
 Menu[1]: GPU: 10% | 46 °C
-Menu[2]: RAM: 13.2 / 31.9 GB (41%)
+Menu[2]: RAM: 16.7 / 31.9 GB (52%)
 Menu[3]: Start with Windows
 Menu[4]: Exit
-AnimationIntervalMs: 490
+AnimationIntervalMs: 470
 AnimationFrameCount: 5
-CurrentFrameIndex: 2
+CurrentFrameIndex: 3
 AutostartChecked: False
 AutostartStateLoaded: True
 MenuBackColor: FF3C3C3C
@@ -80,6 +80,17 @@ DisabledState: True
 Методика: оба процесса запущены одновременно; Windows в простое; из `Get-Process` снимались `TotalProcessorTime`, working set и private bytes, из `GetGuiResources` — GDI/USER, с интервалом 5 с; CPU считался как разница процессорного времени за окно, в процентах одного ядра. RunCat работал с 17.10, EasyMonitoring перезапускался за ~15 с до замера, чтобы исключить влияние старта.
 
 Оптимизация: ссылки на hardware/сенсоры LHM кэшируются один раз при открытии; LHM (температура CPU/GPU, GPU load) и RAM опрашиваются раз в 2 с; CPU load и анимация — раз в 1 с. Замер «после» сделан уже с тёмной темой меню и фоновым опросом автозапуска.
+
+После архитектурного рефакторинга выполнен короткий idle-замер опубликованного exe (60 с, интервал 5 с): **1.74% одного ядра**, working set **84.1 MB avg / 86.2 MB peak**, handles **422**, threads **14**. Полный 5-минутный сравнительный замер выше не перезапускался; cadence 1 s/2 s сохранён.
+
+## Архитектурный рефакторинг
+
+- [x] Metrics: `MetricsSnapshotModule` владеет cadence/freshness/средними; GPU-среднее больше не повторяет cached samples; добавлены тесты первого тика, cadence, hold-one, recovery и source exceptions.
+- [x] Autostart: `AutostartStateModule` владеет actual/desired/unknown; unknown остаётся retryable; toggle перечитывает фактическое состояние; QA-ключи сохранены.
+- [x] Sensors: `SensorResolver` выбирает по стабильным `SensorId`; LHM-adapter связывает один раз; CPU fallback больше не берёт посторонний temperature-сенсор.
+- [x] Tray: `TrayPresentationState` в Core, `TrayPresentation` — тонкий WinForms-adapter, `TrayApplicationContext` — host/lifecycle; `ui-diagnostics.txt` сохранил ключи.
+- [x] Добавлен `tests/EasyMonitoring.App.Tests`; App.Tests проверяет snapshot/diagnostics и unknown autostart display.
+- [x] `--diagnostics`, `--ui-check`, `--autostart-check` на published exe завершаются с кодом 0; лог пуст.
 
 ## Ручные проверки
 

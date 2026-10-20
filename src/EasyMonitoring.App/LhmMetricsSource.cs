@@ -7,18 +7,21 @@ namespace EasyMonitoring.App;
 internal sealed record LhmReading(
     double? CpuTemperatureC,
     double? GpuLoadPercent,
-    double? GpuTemperatureC,
-    string? GpuName);
+    double? GpuTemperatureC);
 
 internal sealed class LhmMetricsSource : IDisposable
 {
+    private readonly Dictionary<SensorId, ISensor> _sensorById = new();
+    private readonly Dictionary<HardwareId, IHardware> _hardwareById = new();
+
     private Computer? _computer;
     private IHardware? _cpuHardware;
     private ISensor? _cpuTemperatureSensor;
     private IHardware? _gpuHardware;
     private ISensor? _gpuLoadSensor;
     private ISensor? _gpuTemperatureSensor;
-    private string? _gpuName;
+    private int _nextSensorId;
+    private int _nextHardwareId;
     private bool _openAttempted;
     private bool _readErrorLogged;
     private bool _missingCpuTemperatureLogged;
@@ -28,7 +31,7 @@ internal sealed class LhmMetricsSource : IDisposable
     {
         if (_disposed || !TryOpen())
         {
-            return new LhmReading(null, null, null, null);
+            return new LhmReading(null, null, null);
         }
 
         try
@@ -44,10 +47,9 @@ internal sealed class LhmMetricsSource : IDisposable
             }
 
             return new LhmReading(
-                SanitizeTemperature(_cpuTemperatureSensor?.Value),
-                SanitizePercent(_gpuLoadSensor?.Value),
-                SanitizeTemperature(_gpuTemperatureSensor?.Value),
-                _gpuName);
+                SensorValuePolicy.Temperature(_cpuTemperatureSensor?.Value),
+                SensorValuePolicy.Percent(_gpuLoadSensor?.Value),
+                SensorValuePolicy.Temperature(_gpuTemperatureSensor?.Value));
         }
         catch (Exception exception)
         {
@@ -57,7 +59,7 @@ internal sealed class LhmMetricsSource : IDisposable
                 AppLog.Error("Failed to read LibreHardwareMonitor sensors.", exception);
             }
 
-            return new LhmReading(null, null, null, null);
+            return new LhmReading(null, null, null);
         }
     }
 
@@ -94,43 +96,81 @@ internal sealed class LhmMetricsSource : IDisposable
     {
         var hardware = _computer!.Hardware;
 
+        _sensorById.Clear();
+        _hardwareById.Clear();
+        _nextSensorId = 0;
+        _nextHardwareId = 0;
+        _cpuTemperatureSensor = null;
+        _gpuHardware = null;
+        _gpuLoadSensor = null;
+        _gpuTemperatureSensor = null;
+
         _cpuHardware = hardware.FirstOrDefault(item => item.HardwareType == HardwareType.Cpu);
 
+        HardwareDescriptor? cpuDescriptor = null;
         if (_cpuHardware is not null)
         {
             _cpuHardware.Update();
-
-            var cpuTemperature = SensorSelector.SelectCpuTemperature(
-                ToSensors(_cpuHardware).ToArray());
-
-            _cpuTemperatureSensor = FindSensor(_cpuHardware, cpuTemperature);
-
-            if (_cpuTemperatureSensor is null && !_missingCpuTemperatureLogged)
-            {
-                _missingCpuTemperatureLogged = true;
-                AppLog.Warning(
-                    "CPU temperature is unavailable. Install PawnIO (winget install namazso.PawnIO) and restart EasyMonitoring.");
-            }
+            cpuDescriptor = ToDescriptor(_cpuHardware, HardwareKind.Cpu);
         }
 
-        var gpuReadings = new List<HardwareReadings>();
+        var gpuDescriptors = new List<HardwareDescriptor>();
         foreach (var item in hardware.Where(IsGpu))
         {
             item.Update();
-            gpuReadings.Add(ToReadings(item));
+            gpuDescriptors.Add(ToDescriptor(item, ToGpuKind(item.HardwareType)));
         }
 
-        var gpu = SensorSelector.SelectGpu(gpuReadings);
-        if (gpu is null)
+        var selection = SensorResolver.Resolve(cpuDescriptor, gpuDescriptors);
+
+        if (selection.CpuTemperature is { } cpuTemperatureId)
         {
-            return;
+            _cpuTemperatureSensor = _sensorById[cpuTemperatureId];
         }
 
-        _gpuHardware = hardware.FirstOrDefault(
-            item => IsGpu(item) && string.Equals(item.Name, gpu.Name, StringComparison.Ordinal));
-        _gpuName = gpu.Name;
-        _gpuLoadSensor = FindSensor(_gpuHardware, SensorSelector.SelectGpuLoad(gpu));
-        _gpuTemperatureSensor = FindSensor(_gpuHardware, SensorSelector.SelectGpuTemperature(gpu));
+        if (selection.GpuHardware is { } gpuHardwareId)
+        {
+            _gpuHardware = _hardwareById[gpuHardwareId];
+        }
+
+        if (selection.GpuLoad is { } gpuLoadId)
+        {
+            _gpuLoadSensor = _sensorById[gpuLoadId];
+        }
+
+        if (selection.GpuTemperature is { } gpuTemperatureId)
+        {
+            _gpuTemperatureSensor = _sensorById[gpuTemperatureId];
+        }
+
+        if (_cpuTemperatureSensor is null && !_missingCpuTemperatureLogged)
+        {
+            _missingCpuTemperatureLogged = true;
+            AppLog.Warning(
+                "CPU temperature is unavailable. Install PawnIO (winget install namazso.PawnIO) and restart EasyMonitoring.");
+        }
+    }
+
+    private HardwareDescriptor ToDescriptor(IHardware hardware, HardwareKind kind)
+    {
+        var hardwareId = new HardwareId(++_nextHardwareId);
+        _hardwareById[hardwareId] = hardware;
+
+        var sensors = new List<SensorDescriptor>();
+        foreach (var sensor in EnumerateSensors(hardware))
+        {
+            var sensorKind = ToKind(sensor.SensorType);
+            if (sensorKind == SensorKind.Other)
+            {
+                continue;
+            }
+
+            var sensorId = new SensorId(++_nextSensorId);
+            _sensorById[sensorId] = sensor;
+            sensors.Add(new SensorDescriptor(sensorId, sensor.Name, sensorKind));
+        }
+
+        return new HardwareDescriptor(hardwareId, kind, hardware.Name, sensors);
     }
 
     private static bool IsGpu(IHardware hardware)
@@ -140,26 +180,15 @@ internal sealed class LhmMetricsSource : IDisposable
             or HardwareType.GpuIntel;
     }
 
-    private static HardwareReadings ToReadings(IHardware hardware)
+    private static HardwareKind ToGpuKind(HardwareType hardwareType)
     {
-        return new HardwareReadings(
-            hardware.HardwareType.ToString(),
-            hardware.Name,
-            ToSensors(hardware).ToArray());
-    }
-
-    private static IEnumerable<SensorReading> ToSensors(IHardware hardware)
-    {
-        foreach (var sensor in EnumerateSensors(hardware))
+        return hardwareType switch
         {
-            var kind = ToKind(sensor.SensorType);
-            if (kind == SensorKind.Other)
-            {
-                continue;
-            }
-
-            yield return new SensorReading(sensor.Name, kind, sensor.Value);
-        }
+            HardwareType.GpuNvidia => HardwareKind.GpuNvidia,
+            HardwareType.GpuAmd => HardwareKind.GpuAmd,
+            HardwareType.GpuIntel => HardwareKind.GpuIntel,
+            _ => HardwareKind.Other,
+        };
     }
 
     private static IEnumerable<ISensor> EnumerateSensors(IHardware hardware)
@@ -178,18 +207,6 @@ internal sealed class LhmMetricsSource : IDisposable
         }
     }
 
-    private static ISensor? FindSensor(IHardware? hardware, SensorReading? reading)
-    {
-        if (hardware is null || reading is null)
-        {
-            return null;
-        }
-
-        return EnumerateSensors(hardware).FirstOrDefault(sensor =>
-            string.Equals(sensor.Name, reading.Name, StringComparison.Ordinal) &&
-            ToKind(sensor.SensorType) == reading.Kind);
-    }
-
     private static SensorKind ToKind(SensorType sensorType)
     {
         return sensorType switch
@@ -198,16 +215,6 @@ internal sealed class LhmMetricsSource : IDisposable
             SensorType.Temperature => SensorKind.Temperature,
             _ => SensorKind.Other,
         };
-    }
-
-    private static double? SanitizeTemperature(double? value)
-    {
-        return value is > 0 and < 150 ? value : null;
-    }
-
-    private static double? SanitizePercent(double? value)
-    {
-        return value is >= 0 and <= 100 ? value : null;
     }
 
     public void Dispose()
@@ -223,6 +230,8 @@ internal sealed class LhmMetricsSource : IDisposable
         _gpuHardware = null;
         _gpuLoadSensor = null;
         _gpuTemperatureSensor = null;
+        _sensorById.Clear();
+        _hardwareById.Clear();
 
         try
         {
