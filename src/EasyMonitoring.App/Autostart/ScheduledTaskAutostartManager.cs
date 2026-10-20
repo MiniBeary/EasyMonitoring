@@ -12,12 +12,16 @@ internal sealed class ScheduledTaskAutostartManager : IAutostartManager
     private const int CommandTimeoutMs = 15000;
     private static readonly XNamespace TaskNamespace = "http://schemas.microsoft.com/windows/2004/02/mit/task";
 
-    public bool IsEnabled()
+    public AutostartProbe Probe()
     {
         var query = RunSchtasks(["/Query", "/TN", TaskName, "/XML"]);
         if (!query.Success)
         {
-            return false;
+            var exists = RunSchtasks(["/Query", "/TN", TaskName]);
+
+            return exists.Success
+                ? new AutostartProbe(false, false, Error: query.Output)
+                : new AutostartProbe(true, false);
         }
 
         try
@@ -28,11 +32,6 @@ internal sealed class ScheduledTaskAutostartManager : IAutostartManager
                 .Descendants(TaskNamespace + "Settings")
                 .Descendants(TaskNamespace + "Enabled")
                 .FirstOrDefault()?.Value;
-
-            if (string.Equals(settingsEnabled, "false", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
 
             var command = document
                 .Descendants(TaskNamespace + "Command")
@@ -52,22 +51,24 @@ internal sealed class ScheduledTaskAutostartManager : IAutostartManager
                     "false",
                     StringComparison.OrdinalIgnoreCase));
 
-            return !string.IsNullOrWhiteSpace(command) &&
-                   string.Equals(command, CurrentExecutablePath, StringComparison.OrdinalIgnoreCase) &&
-                   hasLogonTrigger &&
-                   string.Equals(logonType, "InteractiveToken", StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(runLevel, "HighestAvailable", StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
+            var health = new AutostartTaskHealth(
+                HasRunLevel: string.Equals(runLevel, "HighestAvailable", StringComparison.OrdinalIgnoreCase),
+                HasInteractiveToken: string.Equals(logonType, "InteractiveToken", StringComparison.OrdinalIgnoreCase),
+                HasLogonTrigger: hasLogonTrigger);
 
-    internal string? TryGetTaskXml()
-    {
-        var query = RunSchtasks(["/Query", "/TN", TaskName, "/XML"]);
-        return query.Success ? query.Output : null;
+            var enabled = !string.Equals(settingsEnabled, "false", StringComparison.OrdinalIgnoreCase) &&
+                          !string.IsNullOrWhiteSpace(command) &&
+                          string.Equals(command, CurrentExecutablePath, StringComparison.OrdinalIgnoreCase) &&
+                          health.HasLogonTrigger &&
+                          health.HasInteractiveToken &&
+                          health.HasRunLevel;
+
+            return new AutostartProbe(true, enabled, health);
+        }
+        catch (Exception exception)
+        {
+            return new AutostartProbe(false, false, Error: exception.Message);
+        }
     }
 
     public AutostartResult Enable()
@@ -86,9 +87,15 @@ internal sealed class ScheduledTaskAutostartManager : IAutostartManager
                 return new AutostartResult(false, create.Output);
             }
 
-            return IsEnabled()
-                ? new AutostartResult(true)
-                : new AutostartResult(false, "Task was created, but the state check failed.");
+            var probe = Probe();
+            if (probe.IsKnown && probe.Enabled)
+            {
+                return new AutostartResult(true);
+            }
+
+            return new AutostartResult(
+                false,
+                probe.Error ?? "Task was created, but the state check failed.");
         }
         catch (Exception exception)
         {
@@ -110,12 +117,26 @@ internal sealed class ScheduledTaskAutostartManager : IAutostartManager
     {
         var delete = RunSchtasks(["/Delete", "/TN", TaskName, "/F"]);
 
-        if (delete.Success || !IsEnabled())
+        if (!delete.Success)
+        {
+            var probe = Probe();
+            if (probe.IsKnown && !probe.Enabled)
+            {
+                return new AutostartResult(true);
+            }
+
+            return new AutostartResult(false, delete.Output);
+        }
+
+        var after = Probe();
+        if (after.IsKnown && !after.Enabled)
         {
             return new AutostartResult(true);
         }
 
-        return new AutostartResult(false, delete.Output);
+        return new AutostartResult(
+            false,
+            after.Error ?? "Task was deleted, but the state check failed.");
     }
 
     private static string CurrentExecutablePath
@@ -200,8 +221,8 @@ internal sealed class ScheduledTaskAutostartManager : IAutostartManager
                 return (false, "Failed to start schtasks.exe.");
             }
 
-            var standardOutput = process.StandardOutput.ReadToEnd();
-            var standardError = process.StandardError.ReadToEnd();
+            var standardOutput = process.StandardOutput.ReadToEndAsync();
+            var standardError = process.StandardError.ReadToEndAsync();
 
             if (!process.WaitForExit(CommandTimeoutMs))
             {
@@ -211,7 +232,7 @@ internal sealed class ScheduledTaskAutostartManager : IAutostartManager
 
             var output = string.Join(
                 Environment.NewLine,
-                new[] { standardOutput, standardError }
+                new[] { standardOutput.GetAwaiter().GetResult(), standardError.GetAwaiter().GetResult() }
                     .Where(line => !string.IsNullOrWhiteSpace(line)))
                 .Trim();
 

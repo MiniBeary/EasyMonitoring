@@ -1,8 +1,8 @@
-namespace EasyMonitoring.Core.Autostart;
+﻿namespace EasyMonitoring.Core.Autostart;
 
 public interface IAutostartManager
 {
-    bool IsEnabled();
+    AutostartProbe Probe();
 
     AutostartResult Enable();
 

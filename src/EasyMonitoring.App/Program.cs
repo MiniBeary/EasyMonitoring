@@ -149,42 +149,51 @@ internal static class Program
 
     private static int RunAutostartCheck()
     {
-        var manager = new ScheduledTaskAutostartManager();
-        var controller = new AutostartController(manager);
+        var module = new AutostartStateModule(new ScheduledTaskAutostartManager());
 
         var lines = new List<string>
         {
             "EasyMonitoring autostart diagnostics",
         };
 
-        var initial = controller.IsEnabled;
-        lines.Add($"Initial: {initial}");
+        var initial = module.Refresh(DateTimeOffset.UtcNow, force: true);
+        lines.Add($"Initial: {FormatState(initial)}");
 
+        if (!initial.IsKnown)
+        {
+            lines.Add($"Error: {initial.LastError ?? "Autostart state is unavailable."}");
+            WriteAutostartDiagnostics(lines);
+            return 1;
+        }
+
+        var initialEnabled = initial.IsEnabled;
         var success = false;
         var restored = true;
 
         try
         {
-            var enable = controller.SetEnabled(true);
-            var enabled = controller.IsEnabled;
+            var enable = module.SetEnabled(true, DateTimeOffset.UtcNow);
+            var enabledState = module.State;
             lines.Add($"Enable: success={enable.Success} error={enable.Error ?? "none"}");
-            lines.Add($"EnabledState: {enabled}");
+            lines.Add($"EnabledState: {FormatState(enabledState)}");
 
-            var taskXml = manager.TryGetTaskXml();
-            var hasRunLevel = taskXml?.Contains("HighestAvailable", StringComparison.OrdinalIgnoreCase) == true;
-            var hasInteractiveToken = taskXml?.Contains("InteractiveToken", StringComparison.OrdinalIgnoreCase) == true;
-            var hasLogonTrigger = taskXml?.Contains("LogonTrigger", StringComparison.OrdinalIgnoreCase) == true;
+            var health = enabledState.Health;
+            var hasRunLevel = health?.HasRunLevel == true;
+            var hasInteractiveToken = health?.HasInteractiveToken == true;
+            var hasLogonTrigger = health?.HasLogonTrigger == true;
             lines.Add($"TaskXmlRunLevel: {hasRunLevel}");
             lines.Add($"TaskXmlInteractiveToken: {hasInteractiveToken}");
             lines.Add($"TaskXmlLogonTrigger: {hasLogonTrigger}");
 
-            var disable = controller.SetEnabled(false);
-            var disabled = !controller.IsEnabled;
+            var disable = module.SetEnabled(false, DateTimeOffset.UtcNow);
+            var disabledState = module.State;
+            var disabled = disabledState.IsKnown && !disabledState.IsEnabled;
             lines.Add($"Disable: success={disable.Success} error={disable.Error ?? "none"}");
             lines.Add($"DisabledState: {disabled}");
 
-            success = enable.Success && enabled && hasRunLevel && hasInteractiveToken &&
-                      hasLogonTrigger && disable.Success && disabled;
+            success = enable.Success && enabledState.IsKnown && enabledState.IsEnabled &&
+                      hasRunLevel && hasInteractiveToken && hasLogonTrigger &&
+                      disable.Success && disabled;
         }
         catch (Exception exception)
         {
@@ -195,10 +204,12 @@ internal static class Program
         {
             try
             {
-                if (initial && !controller.IsEnabled)
+                var current = module.Refresh(DateTimeOffset.UtcNow, force: true);
+                if (initialEnabled && current.IsKnown && !current.IsEnabled)
                 {
-                    var restore = controller.SetEnabled(true);
-                    restored = restore.Success && controller.IsEnabled;
+                    var restore = module.SetEnabled(true, DateTimeOffset.UtcNow);
+                    var restoredState = module.State;
+                    restored = restore.Success && restoredState.IsKnown && restoredState.IsEnabled;
                     lines.Add($"Restore: success={restore.Success} error={restore.Error ?? "none"}");
                 }
             }
@@ -210,12 +221,22 @@ internal static class Program
             }
         }
 
+        WriteAutostartDiagnostics(lines);
+
+        return success && restored ? 0 : 1;
+    }
+
+    private static string FormatState(EasyMonitoring.Core.Autostart.AutostartState state)
+    {
+        return state.IsKnown ? state.IsEnabled.ToString() : "Unknown";
+    }
+
+    private static void WriteAutostartDiagnostics(IReadOnlyList<string> lines)
+    {
         var outputDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "EasyMonitoring");
         Directory.CreateDirectory(outputDirectory);
         File.WriteAllLines(Path.Combine(outputDirectory, "autostart-diagnostics.txt"), lines);
-
-        return success && restored ? 0 : 1;
     }
 }

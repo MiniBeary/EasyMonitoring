@@ -1,4 +1,4 @@
-using EasyMonitoring.App.Autostart;
+﻿using EasyMonitoring.App.Autostart;
 using EasyMonitoring.App.Icons;
 using EasyMonitoring.App.Logging;
 using EasyMonitoring.App.UI;
@@ -21,13 +21,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _ramItem;
     private readonly ToolStripMenuItem _autostartItem;
     private readonly ToolStripMenuItem _exitItem;
-    private readonly AutostartController _autostart;
+    private readonly AutostartStateModule _autostart;
     private readonly WinFormsTimer _animationTimer;
     private readonly MetricsSampler _sampler;
     private int _frameIndex;
-    private DateTime _autostartCheckedAt;
     private bool _autostartBusy;
-    private bool _autostartRefreshInProgress;
     private bool _disposed;
     private bool _exiting;
 
@@ -71,7 +69,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _gpuItem = CreateInfoItem(StatusFormatter.FormatGpu(null, null));
         _ramItem = CreateInfoItem(StatusFormatter.FormatRam(null, null, null));
 
-        _autostart = new AutostartController(new ScheduledTaskAutostartManager());
+        _autostart = new AutostartStateModule(new ScheduledTaskAutostartManager());
         _autostartItem = new ToolStripMenuItem("Start with Windows")
         {
             Enabled = false,
@@ -138,49 +136,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void RefreshAutostartStateIfStale()
     {
-        if (_autostartRefreshInProgress || _autostartBusy)
+        if (_autostartBusy)
         {
             return;
         }
 
-        if (DateTime.UtcNow - _autostartCheckedAt > TimeSpan.FromSeconds(10))
-        {
-            _ = Task.Run(RefreshAutostartState);
-        }
+        _ = Task.Run(RefreshAutostartState);
     }
 
     private void RefreshAutostartState()
     {
-        if (_disposed || _autostartRefreshInProgress)
+        if (_disposed)
         {
             return;
         }
 
-        _autostartRefreshInProgress = true;
-
-        bool enabled;
-        try
-        {
-            enabled = _autostart.IsEnabled;
-        }
-        catch (Exception exception)
-        {
-            AppLog.Error("Failed to read autostart state.", exception);
-            enabled = false;
-        }
+        var state = _autostart.Refresh(DateTimeOffset.UtcNow);
 
         _uiContext.Post(_ =>
         {
-            _autostartRefreshInProgress = false;
-
-            if (_disposed || _autostartBusy)
+            if (_disposed)
             {
                 return;
             }
 
-            _autostartItem.Checked = enabled;
+            _autostartItem.Checked = state.IsKnown ? state.IsEnabled : _autostartItem.Checked;
             _autostartItem.Enabled = true;
-            _autostartCheckedAt = DateTime.UtcNow;
             AutostartStateLoaded = true;
         }, null);
     }
@@ -196,10 +177,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _autostartItem.Enabled = false;
 
         var desired = !_autostartItem.Checked;
+        var previous = _autostartItem.Checked;
 
         _ = Task.Run(() =>
         {
-            var result = _autostart.SetEnabled(desired);
+            var result = _autostart.SetEnabled(desired, DateTimeOffset.UtcNow);
+            var state = _autostart.State;
 
             _uiContext.Post(_ =>
             {
@@ -211,16 +194,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 }
 
                 _autostartItem.Enabled = true;
+                _autostartItem.Checked = state.IsKnown
+                    ? state.IsEnabled
+                    : result.Success
+                        ? desired
+                        : previous;
+                AutostartStateLoaded = true;
 
-                if (result.Success)
+                if (!result.Success)
                 {
-                    _autostartItem.Checked = desired;
-                    _autostartCheckedAt = DateTime.UtcNow;
-                    AutostartStateLoaded = true;
-                }
-                else
-                {
-                    _autostartItem.Checked = !desired;
                     ShowAutostartError(result.Error);
                 }
             }, null);
