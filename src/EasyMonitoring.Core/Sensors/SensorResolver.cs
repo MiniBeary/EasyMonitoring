@@ -1,6 +1,6 @@
 namespace EasyMonitoring.Core.Sensors;
 
-public static class SensorSelector
+public static class SensorResolver
 {
     private static readonly string[] CpuTemperaturePriority =
     [
@@ -12,16 +12,37 @@ public static class SensorSelector
         "Package",
     ];
 
-    private static readonly string[] GpuTypePriority =
+    private static readonly HardwareKind[] GpuKindPriority =
     [
-        "GpuNvidia",
-        "GpuAmd",
-        "GpuIntel",
+        HardwareKind.GpuNvidia,
+        HardwareKind.GpuAmd,
+        HardwareKind.GpuIntel,
     ];
 
-    public static SensorReading? SelectCpuTemperature(IEnumerable<SensorReading> sensors)
+    public static SensorSelection Resolve(
+        HardwareDescriptor? cpu,
+        IEnumerable<HardwareDescriptor> hardware)
     {
-        var temperatures = sensors
+        ArgumentNullException.ThrowIfNull(hardware);
+
+        var gpus = hardware
+            .Where(item => GpuKindPriority.Contains(item.Kind))
+            .ToList();
+
+        var selectedGpu = SelectGpu(gpus);
+
+        return new SensorSelection(
+            CpuTemperature: cpu is null ? null : SelectCpuTemperature(cpu),
+            GpuHardware: selectedGpu?.Id,
+            GpuLoad: selectedGpu is null ? null : SelectGpuLoad(selectedGpu),
+            GpuTemperature: selectedGpu is null ? null : SelectGpuTemperature(selectedGpu));
+    }
+
+    public static SensorId? SelectCpuTemperature(HardwareDescriptor cpu)
+    {
+        ArgumentNullException.ThrowIfNull(cpu);
+
+        var temperatures = cpu.Sensors
             .Where(sensor => sensor.Kind == SensorKind.Temperature)
             .ToList();
 
@@ -32,36 +53,31 @@ public static class SensorSelector
 
             if (match is not null)
             {
-                return match;
+                return match.Id;
             }
         }
 
         var thermal = temperatures.FirstOrDefault(sensor => ContainsAny(sensor.Name, "Tctl", "Tdie"));
         if (thermal is not null)
         {
-            return thermal;
+            return thermal.Id;
         }
 
         var core = temperatures.FirstOrDefault(sensor => ContainsAny(sensor.Name, "Core", "CCD"));
-        if (core is not null)
-        {
-            return core;
-        }
-
-        return temperatures.FirstOrDefault();
+        return core?.Id;
     }
 
-    public static HardwareReadings? SelectGpu(IEnumerable<HardwareReadings> hardware)
+    public static HardwareDescriptor? SelectGpu(IEnumerable<HardwareDescriptor> hardware)
     {
+        ArgumentNullException.ThrowIfNull(hardware);
+
         var gpus = hardware
-            .Where(item => IsGpuType(item.HardwareType))
+            .Where(item => GpuKindPriority.Contains(item.Kind))
             .ToList();
 
-        foreach (var type in GpuTypePriority)
+        foreach (var kind in GpuKindPriority)
         {
-            var match = gpus.FirstOrDefault(
-                item => string.Equals(item.HardwareType, type, StringComparison.OrdinalIgnoreCase) &&
-                        HasGpuSensor(item));
+            var match = gpus.FirstOrDefault(item => item.Kind == kind && HasGpuSensor(item));
 
             if (match is not null)
             {
@@ -72,38 +88,37 @@ public static class SensorSelector
         return gpus.FirstOrDefault(HasGpuSensor);
     }
 
-    public static SensorReading? SelectGpuLoad(HardwareReadings gpu)
+    public static SensorId? SelectGpuLoad(HardwareDescriptor gpu)
     {
+        ArgumentNullException.ThrowIfNull(gpu);
+
         var loads = gpu.Sensors
             .Where(sensor => sensor.Kind == SensorKind.Load)
             .ToList();
 
-        return loads.FirstOrDefault(
+        return (loads.FirstOrDefault(
                    sensor => string.Equals(sensor.Name, "GPU Core", StringComparison.OrdinalIgnoreCase))
                ?? loads.FirstOrDefault(sensor => ContainsAny(sensor.Name, "GPU Core"))
-               ?? loads.FirstOrDefault();
+               ?? loads.FirstOrDefault())?.Id;
     }
 
-    public static SensorReading? SelectGpuTemperature(HardwareReadings gpu)
+    public static SensorId? SelectGpuTemperature(HardwareDescriptor gpu)
     {
+        ArgumentNullException.ThrowIfNull(gpu);
+
         var temperatures = gpu.Sensors
             .Where(sensor => sensor.Kind == SensorKind.Temperature)
             .ToList();
 
-        return temperatures.FirstOrDefault(
+        return (temperatures.FirstOrDefault(
                    sensor => string.Equals(sensor.Name, "GPU Core", StringComparison.OrdinalIgnoreCase))
                ?? temperatures.FirstOrDefault(sensor => ContainsAny(sensor.Name, "GPU Core"))
-               ?? temperatures.FirstOrDefault();
+               ?? temperatures.FirstOrDefault())?.Id;
     }
 
-    private static bool HasGpuSensor(HardwareReadings gpu)
+    private static bool HasGpuSensor(HardwareDescriptor gpu)
     {
         return SelectGpuLoad(gpu) is not null || SelectGpuTemperature(gpu) is not null;
-    }
-
-    private static bool IsGpuType(string hardwareType)
-    {
-        return GpuTypePriority.Contains(hardwareType, StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool ContainsAny(string value, params string[] terms)
