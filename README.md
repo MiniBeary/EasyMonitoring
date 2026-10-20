@@ -141,12 +141,20 @@ dotnet publish src/EasyMonitoring.App -c Release -r win-x64 --self-contained tru
 
 Готовый файл: `artifacts/publish/EasyMonitoring.exe`.
 
+## Архитектура
+
+- `MetricsSnapshotModule` в Core владеет cadence, свежестью, средними и политикой пропусков; App-слой только опрашивает источники.
+- `AutostartStateModule` владеет actual/desired/unknown состоянием Task Scheduler; Windows-adapter отвечает за `schtasks` и XML.
+- `SensorResolver` выбирает сенсоры по стабильным `SensorId`; LHM-adapter связывает их с живыми сенсорами один раз.
+- `TrayApplicationContext` — host и lifecycle; `TrayPresentationState` — отображаемое состояние; `TrayPresentation` — тонкий WinForms-адаптер.
+- Подробный словарь терминов — в [CONTEXT.md](CONTEXT.md).
+
 ## Структура
 
 ```
 src/EasyMonitoring.Core/   чистая логика
-src/EasyMonitoring.App/    WinForms tray-приложение
-tests/                     xUnit-тесты Core
+src/EasyMonitoring.App/    Windows/LHM-адаптеры и tray UI
+tests/                     xUnit-тесты Core и App
 docs/                      план, QA-чек-лист и заметки
 artifacts/publish/         опубликованный exe (не коммитится)
 ```

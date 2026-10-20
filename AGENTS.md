@@ -1,12 +1,13 @@
-# AGENTS.md
+﻿# AGENTS.md
 
 ## Project
 
-Windows-only .NET 9 WinForms tray monitor. It has no main window: `Program.Main` starts `TrayApplicationContext`, which owns the `NotifyIcon`, menu, animation timer, and background `MetricsSampler`.
+Windows-only .NET 9 WinForms tray monitor. It has no main window: `Program.Main` starts `TrayApplicationContext`, which owns composition and lifecycle; `TrayPresentation` owns the `NotifyIcon`, menu, and animation timer; `MetricsSnapshotModule` owns sampling policy. See `CONTEXT.md`.
 
 - `src/EasyMonitoring.Core` — pure logic (`net9.0`); no WinForms, LHM, or P/Invoke.
 - `src/EasyMonitoring.App` — Windows/LHM adapters and tray UI (`net9.0-windows`, x64).
-- `tests/EasyMonitoring.Core.Tests` — xUnit tests for Core only. UI has no automated xUnit tests.
+- `tests/EasyMonitoring.Core.Tests` — xUnit tests for Core.
+- `tests/EasyMonitoring.App.Tests` — Windows xUnit tests for the tray presentation adapter (`net9.0-windows`).
 - Published exe is `artifacts/publish/EasyMonitoring.exe` because the App project overrides `AssemblyName`; it is git-ignored.
 
 ## Commands
@@ -15,6 +16,7 @@ Windows-only .NET 9 WinForms tray monitor. It has no main window: `Program.Main`
 dotnet build EasyMonitoring.sln -c Release
 dotnet test EasyMonitoring.sln -c Release
 dotnet test tests/EasyMonitoring.Core.Tests/EasyMonitoring.Core.Tests.csproj -c Release --filter "FullyQualifiedName~CpuLoadCalculatorTests"
+dotnet test tests/EasyMonitoring.App.Tests/EasyMonitoring.App.Tests.csproj -c Release
 ```
 
 Publish (stop any running EasyMonitoring first):
@@ -41,16 +43,16 @@ CI runs on GitHub Actions: `.github/workflows/build.yml` restores, builds, and t
 - CPU load uses `GetSystemTimes` P/Invoke. Do not replace it with `PerformanceCounter`: localized Windows counter names are unreliable on this machine.
 - P/Invoke helpers live in `App/Native`. `GlobalMemoryStatusExNative` needs `EntryPoint = "GlobalMemoryStatusEx"`; without it the native call fails.
 - LibreHardwareMonitorLib is pinned to **0.9.6** and is verified with PawnIO. Re-run `--diagnostics` before changing that version.
-- Keep LHM work in `MetricsSampler`/`LhmMetricsSource` on the background task; UI updates go through `SynchronizationContext`. CPU load/animation sample every 1 s; LHM (CPU/GPU temp, GPU load) and RAM every 2 s; CPU/GPU load keep a 3-sample average. LHM hardware and selected sensors are resolved once at open — do not re-scan or re-select sensors per tick.
+- Keep native/LHM work in `MetricsSource`/`LhmMetricsSource` on the background task; UI updates go through `SynchronizationContext`. `MetricsSnapshotModule` owns the 1 s/2 s cadence, freshness, hold-one-then-N/A policy, and a 3-sample average over fresh samples. LHM hardware and selected sensors are resolved once at open — do not re-scan or re-select sensors per tick. GPU averages must never consume cached samples twice.
 - Idle budget (verified 2026-10-20 on this machine, published exe): ~1.6% of one core and ~85 MB working set (under 2% / 100 MB). RunCat 365 3.6.0 measured ~8.2% of one core; change sampling intervals only with fresh measurements.
-- Sensor priority is in `Core/Sensors/SensorSelector`: CPU `Core (Tctl/Tdie)` → `CPU Package` → `Core*`/`CCD*`; GPU NVIDIA → AMD → Intel, preferring `GPU Core` load/temp. Tests encode this behavior.
+- Sensor priority is in `Core/Sensors/SensorResolver`: CPU `Core (Tctl/Tdie)` → `CPU Package` → `Core*`/`CCD*`; GPU NVIDIA → AMD → Intel, preferring `GPU Core` load/temp. The App maps stable `SensorId` values to live LHM sensors; never rebind by name. No unrelated temperature may be used as CPU temperature. Tests encode this behavior.
 - A temperature of 0 or outside 0–150 °C is treated as missing, not as a real reading.
 - DPI is configured by `ApplicationHighDpiMode=PerMonitorV2` in the App csproj. Do not add `dpiAware`/`dpiAwareness` back to `app.manifest`; the SDK emits warning `WFO0003`.
 - In `Program.Main`, call `Application.SetUnhandledExceptionMode` before creating controls or a `WindowsFormsSynchronizationContext`, otherwise it throws. The fallback context in `TrayApplicationContext` is intentional: `SynchronizationContext.Current` is null before `Application.Run`.
-- The tray app has no `Form`. `Exit` disposes the sampler, icons, menu, and `NotifyIcon`, then calls `ExitThread`; keep that lifecycle intact.
-- UI text is English with invariant-culture numbers and `°C`; documentation is Russian. Preserve formats such as `CPU: 23% | 58 °C` and `RAM: 8.2 / 31.9 GB (26%)`.
+- The tray app has no `Form`. `TrayApplicationContext` owns composition/lifecycle; `TrayPresentation` owns WinForms controls. `Exit` stops and awaits the sampler before disposing presentation/icons/menu/`NotifyIcon`, then calls `ExitThread`; keep that order intact.
+- UI text is English with invariant-culture numbers and `°C`; documentation is Russian. Preserve formats such as `CPU: 23% | 58 °C` and `RAM: 8.2 / 31.9 GB (26%)`. `TrayPresentationState` owns those strings; the WinForms adapter only applies them.
 - Menu theme is custom: `App/UI/MenuTheme` + `EasyMonitoringMenuRenderer`. Disabled menu text must stay white; the renderer overrides `OnRenderItemText` and draws the check mark. Do not replace it with default system colors.
-- Autostart is a Task Scheduler task named `EasyMonitoring`, created from XML via `schtasks /Create`, with `InteractiveToken` and `HighestAvailable` so it starts elevated without a logon UAC prompt. The menu checkbox is `Start with Windows`; queries are read-only, toggles run in the background.
+- Autostart is a Task Scheduler task named `EasyMonitoring`, created from XML via `schtasks /Create`, with `InteractiveToken` and `HighestAvailable` so it starts elevated without a logon UAC prompt. `AutostartStateModule` owns actual/desired/unknown state and reconciliation; the adapter returns `AutostartProbe`/health. The menu checkbox is `Start with Windows`; unknown must remain retryable, not silently disabled.
 - Single-instance mutex is `Local\EasyMonitoring.SingleInstance`. `--diagnostics`, `--ui-check`, and `--autostart-check` intentionally bypass it and run headless.
 
 ## Verification helpers
@@ -63,7 +65,7 @@ After building or publishing:
 .\artifacts\publish\EasyMonitoring.exe --autostart-check # temporarily creates/removes the real task; writes autostart-diagnostics.txt
 ```
 
-`--ui-check` also waits for the cached autostart state. Outputs and error log live in `%LOCALAPPDATA%\EasyMonitoring\`. Use `docs/qa-checklist.md` for current results and the remaining manual checks.
+`--ui-check` also waits for the cached autostart state. It reads a `TrayDiagnostics` record; keep the existing keys/format stable. Outputs and error log live in `%LOCALAPPDATA%\EasyMonitoring\`. Use `docs/qa-checklist.md` for current results and the remaining manual checks.
 
 ## Repo state
 

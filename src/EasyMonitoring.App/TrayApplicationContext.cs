@@ -1,122 +1,31 @@
 ﻿using EasyMonitoring.App.Autostart;
-using EasyMonitoring.App.Icons;
 using EasyMonitoring.App.Logging;
-using EasyMonitoring.App.UI;
-using EasyMonitoring.Core.Animation;
+using EasyMonitoring.App.Tray;
 using EasyMonitoring.Core.Autostart;
-using EasyMonitoring.Core.Formatting;
 using EasyMonitoring.Core.Metrics;
-using WinFormsTimer = System.Windows.Forms.Timer;
 
 namespace EasyMonitoring.App;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly SynchronizationContext _uiContext;
-    private readonly IReadOnlyList<Icon> _frames;
-    private readonly NotifyIcon _notifyIcon;
-    private readonly ContextMenuStrip _menu;
-    private readonly ToolStripMenuItem _cpuItem;
-    private readonly ToolStripMenuItem _gpuItem;
-    private readonly ToolStripMenuItem _ramItem;
-    private readonly ToolStripMenuItem _autostartItem;
-    private readonly ToolStripMenuItem _exitItem;
+    private readonly TrayPresentation _presentation;
     private readonly AutostartStateModule _autostart;
-    private readonly WinFormsTimer _animationTimer;
     private readonly MetricsSampler _sampler;
-    private int _frameIndex;
     private bool _autostartBusy;
     private bool _disposed;
     private bool _exiting;
-
-    internal int AppliedSnapshotCount { get; private set; }
-
-    internal bool AutostartChecked => _autostartItem.Checked;
-
-    internal bool AutostartStateLoaded { get; private set; }
-
-    internal Color MenuBackColor => _menu.BackColor;
-
-    internal Color MenuForeColor => _menu.ForeColor;
-
-    internal bool ShowCheckMargin => _menu.ShowCheckMargin;
-
-    internal string TrayText => _notifyIcon.Text;
-
-    internal IReadOnlyList<string> MenuTexts => _menu.Items
-        .OfType<ToolStripMenuItem>()
-        .Select(item => item.Text ?? string.Empty)
-        .ToArray();
-
-    internal int AnimationIntervalMs => _animationTimer.Interval;
-
-    internal int AnimationFrameCount => _frames.Count;
-
-    internal int CurrentFrameIndex => _frameIndex;
-
-    internal void ExitForDiagnostics()
-    {
-        _exitItem.PerformClick();
-    }
 
     internal TrayApplicationContext(bool showTrayIcon = true)
     {
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
-        _frames = ArcIconFactory.CreateFrames();
-
-        _cpuItem = CreateInfoItem(StatusFormatter.FormatCpu(null, null));
-        _gpuItem = CreateInfoItem(StatusFormatter.FormatGpu(null, null));
-        _ramItem = CreateInfoItem(StatusFormatter.FormatRam(null, null, null));
+        _presentation = new TrayPresentation(showTrayIcon);
+        _presentation.AutostartToggleRequested += (_, _) => ToggleAutostart();
+        _presentation.ExitRequested += (_, _) => ExitApplication();
+        _presentation.MenuOpening += (_, _) => RefreshAutostartStateIfStale();
 
         _autostart = new AutostartStateModule(new ScheduledTaskAutostartManager());
-        _autostartItem = new ToolStripMenuItem("Start with Windows")
-        {
-            Enabled = false,
-            ForeColor = MenuTheme.Foreground,
-        };
-        _autostartItem.Click += (_, _) => ToggleAutostart();
-
-        _exitItem = new ToolStripMenuItem("Exit")
-        {
-            ForeColor = MenuTheme.Foreground,
-        };
-        _exitItem.Click += (_, _) => ExitApplication();
-
-        _menu = new ContextMenuStrip
-        {
-            ShowImageMargin = false,
-            ShowCheckMargin = true,
-            BackColor = MenuTheme.Background,
-            ForeColor = MenuTheme.Foreground,
-            Renderer = new EasyMonitoringMenuRenderer(),
-        };
-        _menu.Opening += (_, _) => RefreshAutostartStateIfStale();
-        _menu.Items.AddRange(
-        [
-            _cpuItem,
-            _gpuItem,
-            _ramItem,
-            new ToolStripSeparator(),
-            _autostartItem,
-            new ToolStripSeparator(),
-            _exitItem,
-        ]);
-
-        _notifyIcon = new NotifyIcon
-        {
-            Icon = _frames[0],
-            Text = "EasyMonitoring",
-            ContextMenuStrip = _menu,
-            Visible = showTrayIcon,
-        };
-
-        _animationTimer = new WinFormsTimer
-        {
-            Interval = AnimationIntervalCalculator.MaxIntervalMs,
-        };
-        _animationTimer.Tick += (_, _) => AdvanceAnimationFrame();
-        _animationTimer.Start();
 
         _sampler = new MetricsSampler();
         _sampler.SnapshotReady += OnSnapshotReady;
@@ -125,18 +34,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _ = Task.Run(RefreshAutostartState);
     }
 
-    private static ToolStripMenuItem CreateInfoItem(string text)
+    internal bool IsDiagnosticsReady
     {
-        return new ToolStripMenuItem(text)
+        get
         {
-            Enabled = false,
-            ForeColor = MenuTheme.Foreground,
-        };
+            var diagnostics = _presentation.GetDiagnostics();
+            return diagnostics.Snapshots > 0 && diagnostics.AutostartStateLoaded;
+        }
     }
+
+    internal TrayDiagnostics GetDiagnostics() => _presentation.GetDiagnostics();
+
+    internal void ExitForDiagnostics() => ExitApplication();
 
     private void RefreshAutostartStateIfStale()
     {
-        if (_autostartBusy)
+        if (_autostartBusy || _disposed || _exiting)
         {
             return;
         }
@@ -146,7 +59,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void RefreshAutostartState()
     {
-        if (_disposed)
+        if (_disposed || _exiting)
         {
             return;
         }
@@ -155,29 +68,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _uiContext.Post(_ =>
         {
-            if (_disposed)
+            if (_disposed || _exiting)
             {
                 return;
             }
 
-            _autostartItem.Checked = state.IsKnown ? state.IsEnabled : _autostartItem.Checked;
-            _autostartItem.Enabled = true;
-            AutostartStateLoaded = true;
+            _presentation.ApplyAutostart(state, _presentation.AutostartChecked);
         }, null);
     }
 
     private void ToggleAutostart()
     {
-        if (_autostartBusy)
+        if (_autostartBusy || _disposed || _exiting)
         {
             return;
         }
 
         _autostartBusy = true;
-        _autostartItem.Enabled = false;
+        _presentation.SetAutostartEnabled(false);
 
-        var desired = !_autostartItem.Checked;
-        var previous = _autostartItem.Checked;
+        var previous = _presentation.AutostartChecked;
+        var desired = !previous;
 
         _ = Task.Run(() =>
         {
@@ -188,88 +99,33 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 _autostartBusy = false;
 
-                if (_disposed)
+                if (_disposed || _exiting)
                 {
                     return;
                 }
 
-                _autostartItem.Enabled = true;
-                _autostartItem.Checked = state.IsKnown
-                    ? state.IsEnabled
-                    : result.Success
-                        ? desired
-                        : previous;
-                AutostartStateLoaded = true;
+                _presentation.SetAutostartEnabled(true);
+                _presentation.ApplyAutostart(state, result.Success ? desired : previous);
 
                 if (!result.Success)
                 {
-                    ShowAutostartError(result.Error);
+                    _presentation.ShowAutostartError(result.Error);
                 }
             }, null);
         });
     }
 
-    private void ShowAutostartError(string? error)
-    {
-        AppLog.Error($"Failed to update autostart: {error}");
-
-        if (_notifyIcon.Visible)
-        {
-            _notifyIcon.ShowBalloonTip(
-                timeout: 5000,
-                tipTitle: "EasyMonitoring",
-                tipText: $"Could not update autostart: {error}",
-                tipIcon: ToolTipIcon.Warning);
-        }
-    }
-
     private void OnSnapshotReady(MetricsSnapshot snapshot)
     {
-        if (_disposed)
+        if (_disposed || _exiting)
         {
             return;
         }
 
-        _uiContext.Post(_ => ApplySnapshot(snapshot), null);
+        _uiContext.Post(_ => _presentation.ApplySnapshot(snapshot), null);
     }
 
-    private void ApplySnapshot(MetricsSnapshot snapshot)
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        AppliedSnapshotCount++;
-
-        var cpuText = StatusFormatter.FormatCpu(snapshot.CpuLoadPercent, snapshot.CpuTemperatureC);
-        _notifyIcon.Text = cpuText;
-        _cpuItem.Text = cpuText;
-        _gpuItem.Text = StatusFormatter.FormatGpu(snapshot.GpuLoadPercent, snapshot.GpuTemperatureC);
-        _ramItem.Text = StatusFormatter.FormatRam(
-            snapshot.RamUsedGb,
-            snapshot.RamTotalGb,
-            snapshot.RamUsedPercent);
-
-        var interval = AnimationIntervalCalculator.Calculate(snapshot.CpuLoadPercent);
-        if (_animationTimer.Interval != interval)
-        {
-            _animationTimer.Interval = interval;
-        }
-    }
-
-    private void AdvanceAnimationFrame()
-    {
-        if (_disposed || _frames.Count == 0)
-        {
-            return;
-        }
-
-        _frameIndex = (_frameIndex + 1) % _frames.Count;
-        _notifyIcon.Icon = _frames[_frameIndex];
-    }
-
-    private void ExitApplication()
+    private async void ExitApplication()
     {
         if (_exiting)
         {
@@ -277,21 +133,33 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         _exiting = true;
-        DisposeResources();
+        _presentation.SetAutostartEnabled(false);
+
+        try
+        {
+            await _sampler.StopAsync();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("Failed to stop metrics sampling.", exception);
+        }
+
+        DisposePresentation();
         ExitThread();
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !_disposed)
         {
-            DisposeResources();
+            _sampler.StopAsync().GetAwaiter().GetResult();
+            DisposePresentation();
         }
 
         base.Dispose(disposing);
     }
 
-    private void DisposeResources()
+    private void DisposePresentation()
     {
         if (_disposed)
         {
@@ -299,20 +167,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         _disposed = true;
-
-        _animationTimer.Stop();
-        _animationTimer.Dispose();
-
         _sampler.SnapshotReady -= OnSnapshotReady;
-        _sampler.Dispose();
-
-        _notifyIcon.Visible = false;
-        _notifyIcon.Dispose();
-        _menu.Dispose();
-
-        foreach (var frame in _frames)
-        {
-            frame.Dispose();
-        }
+        _presentation.Dispose();
     }
 }

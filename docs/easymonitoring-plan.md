@@ -440,3 +440,14 @@ dotnet publish src/EasyMonitoring.App -c Release -r win-x64 --self-contained tru
 - Состояние читается через `schtasks /Query /TN EasyMonitoring /XML`; включение/выключение выполняются в фоне, ошибки логируются и показываются balloon tip.
 - `--autostart-check` — QA-режим: временно создаёт задачу, проверяет XML и удаляет её.
 - Добавлены `AutostartController` и `AutostartControllerTests` (64 теста Core).
+
+## 15. Углубление архитектуры после v1.0.0
+
+Рефакторинг выполнен по четырём кандидатам architecture review:
+
+- `MetricsSnapshotModule` — Core-модуль владеет cadence 1 s/2 s, свежестью, hold-one-then-N/A и средними; `MetricsSource`/`LhmMetricsSource` остаются adapter-ами. Удалены `MetricsAggregator`, `MovingAverage` и их прямые тесты.
+- `AutostartStateModule` — Core-модуль владеет actual/desired/unknown, refresh/toggle и rollback; `IAutostartManager` возвращает `AutostartProbe` с health. Удалён shallow `AutostartController`; unknown больше не считается disabled.
+- `SensorResolver` — выбор сенсоров по стабильным `SensorId`/`HardwareId`, без повторного поиска по имени. `SensorValuePolicy` владеет допустимыми диапазонами; CPU fallback ограничен CPU-сенсорами.
+- `TrayPresentationState` (Core) + `TrayPresentation` (App) + `TrayApplicationContext` host: presentation применяет состояние, host владеет composition/lifecycle. `AnimationIntervalCalculator` поглощён presentation state, diagnostic getters заменены `TrayDiagnostics` с прежними ключами `ui-diagnostics.txt`.
+- Добавлен `tests/EasyMonitoring.App.Tests`; итог: 62 Core-теста + 2 App-теста.
+- `find-skills` повторно проверен: официальный `winforms-expert` ориентирован на Designer/`InitializeComponent`, в проекте их нет; установка не требуется.

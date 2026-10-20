@@ -107,13 +107,13 @@ internal static class Program
 
         timer.Tick += (_, _) =>
         {
-            if ((context.AppliedSnapshotCount == 0 || !context.AutostartStateLoaded) &&
-                DateTime.UtcNow < deadline)
+            if (!context.IsDiagnosticsReady && DateTime.UtcNow < deadline)
             {
                 return;
             }
 
-            snapshotReceived = context.AppliedSnapshotCount > 0;
+            var diagnostics = context.GetDiagnostics();
+            snapshotReceived = diagnostics.Snapshots > 0;
             timer.Stop();
 
             var outputDirectory = Path.Combine(
@@ -124,18 +124,18 @@ internal static class Program
             var lines = new List<string>
             {
                 "EasyMonitoring UI diagnostics",
-                $"Snapshots: {context.AppliedSnapshotCount}",
-                $"TrayText: {context.TrayText}",
+                $"Snapshots: {diagnostics.Snapshots}",
+                $"TrayText: {diagnostics.TrayText}",
             };
-            lines.AddRange(context.MenuTexts.Select((text, index) => $"Menu[{index}]: {text}"));
-            lines.Add($"AnimationIntervalMs: {context.AnimationIntervalMs}");
-            lines.Add($"AnimationFrameCount: {context.AnimationFrameCount}");
-            lines.Add($"CurrentFrameIndex: {context.CurrentFrameIndex}");
-            lines.Add($"AutostartChecked: {context.AutostartChecked}");
-            lines.Add($"AutostartStateLoaded: {context.AutostartStateLoaded}");
-            lines.Add($"MenuBackColor: {context.MenuBackColor.ToArgb():X8}");
-            lines.Add($"MenuForeColor: {context.MenuForeColor.ToArgb():X8}");
-            lines.Add($"ShowCheckMargin: {context.ShowCheckMargin}");
+            lines.AddRange(diagnostics.MenuTexts.Select((text, index) => $"Menu[{index}]: {text}"));
+            lines.Add($"AnimationIntervalMs: {diagnostics.AnimationIntervalMs}");
+            lines.Add($"AnimationFrameCount: {diagnostics.AnimationFrameCount}");
+            lines.Add($"CurrentFrameIndex: {diagnostics.CurrentFrameIndex}");
+            lines.Add($"AutostartChecked: {diagnostics.AutostartChecked}");
+            lines.Add($"AutostartStateLoaded: {diagnostics.AutostartStateLoaded}");
+            lines.Add($"MenuBackColor: {diagnostics.MenuBackColor.ToArgb():X8}");
+            lines.Add($"MenuForeColor: {diagnostics.MenuForeColor.ToArgb():X8}");
+            lines.Add($"ShowCheckMargin: {diagnostics.ShowCheckMargin}");
 
             File.WriteAllLines(Path.Combine(outputDirectory, "ui-diagnostics.txt"), lines);
             context.ExitForDiagnostics();
