@@ -18,5 +18,5 @@
 - Missing readings are held for one cycle, then become `N/A`; GPU averages only fresh slow samples.
 - CPU temperature falls back only to recognized CPU sensors; an unrelated temperature is not a CPU temperature.
 - Autostart is an elevated Task Scheduler task with `InteractiveToken`, `HighestAvailable`, and a logon trigger.
-- The UI format stays `CPU: 23% | 58 °C`, `RAM: 8.2 / 31.9 GB (26%)`; docs are Russian.
+- The UI format stays `CPU: 23% | 58 °C`, `RAM: 8.2 / 31.9 GB (26%)`; README is English and internal docs are Russian.
 - `--diagnostics`, `--ui-check`, and `--autostart-check` keep their current output keys and bypass the single-instance mutex.
