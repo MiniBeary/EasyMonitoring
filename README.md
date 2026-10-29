@@ -13,7 +13,7 @@ An animated arc follows CPU load. Hover for CPU usage and temperature; right-cli
   <img src="docs/assets/menu.png" alt="EasyMonitoring tray menu showing CPU, GPU, RAM and Windows autostart" width="260">
 </p>
 
-> **Branch status:** the autostart protection and shutdown fixes described below are in the current source and are not included in release **v1.0.1**. No new release has been published for these changes.
+> **Version 1.0.2** includes the autostart protection and shutdown fixes described below. Version **1.0.1** and earlier do not include these protections.
 
 **[Download releases](https://github.com/MiniBeary/EasyMonitoring/releases)** · [Build from source](#build-from-source) · [Report a security issue](SECURITY.md)
 
