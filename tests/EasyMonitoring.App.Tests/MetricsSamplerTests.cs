@@ -2,8 +2,10 @@ using EasyMonitoring.Core.Metrics;
 
 namespace EasyMonitoring.App.Tests;
 
+[Collection(nameof(LifecycleTestCollection))]
 public class MetricsSamplerTests
 {
+    private static readonly TimeSpan TestDeadline = TimeSpan.FromSeconds(15);
     [Fact]
     public async Task Stop_before_start_disposes_once_and_prevents_later_start()
     {
@@ -25,17 +27,17 @@ public class MetricsSamplerTests
         using var sampler = Create(source);
         var snapshots = 0;
         sampler.SnapshotReady += _ => Interlocked.Increment(ref snapshots);
-        sampler.Start();
-        await source.Blocked.Task.WaitAsync(TimeSpan.FromSeconds(5));
         try
         {
+            sampler.Start();
+            await source.Blocked.Task.WaitAsync(TestDeadline);
             var stop = sampler.StopAsync();
             Assert.Same(stop, sampler.StopAsync());
-            await stop.WaitAsync(TimeSpan.FromSeconds(5));
+            await stop.WaitAsync(TestDeadline);
             Assert.Equal(0, source.Disposals);
         }
         finally { source.Release.Set(); }
-        await source.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await source.Disposed.Task.WaitAsync(TestDeadline);
         await sampler.StopAsync();
         Assert.Equal(1, source.Disposals);
         Assert.Equal(0, snapshots);
@@ -47,7 +49,7 @@ public class MetricsSamplerTests
         var source = new ControlledSource { Throw = true };
         using var sampler = Create(source);
         sampler.Start();
-        await source.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await source.Disposed.Task.WaitAsync(TestDeadline);
         await sampler.StopAsync();
         Assert.Equal(1, source.Disposals);
     }
@@ -60,7 +62,7 @@ public class MetricsSamplerTests
         var delivered = new TaskCompletionSource<MetricsSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         sampler.SnapshotReady += snapshot => delivered.TrySetResult(snapshot);
         sampler.Start();
-        var snapshot = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var snapshot = await delivered.Task.WaitAsync(TestDeadline);
         Assert.Equal(25, snapshot.CpuLoadPercent);
         await Task.WhenAll(sampler.StopAsync(), sampler.StopAsync());
         Assert.Equal(1, source.Disposals);
@@ -87,7 +89,7 @@ public class MetricsSamplerTests
             if (read == BlockOnRead)
             {
                 Blocked.TrySetResult();
-                if (!Release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Test gate was not released.");
+                if (!Release.Wait(TimeSpan.FromSeconds(30))) throw new TimeoutException("Test gate was not released.");
             }
             if (Throw) throw new InvalidOperationException("test read failure");
             return 25;

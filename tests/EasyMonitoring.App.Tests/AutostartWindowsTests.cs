@@ -9,6 +9,7 @@ using EasyMonitoring.Core.Autostart;
 
 namespace EasyMonitoring.App.Tests;
 
+[Collection(nameof(LifecycleTestCollection))]
 public class AutostartWindowsTests
 {
     [AdministratorFact]
@@ -33,6 +34,7 @@ public class AutostartWindowsTests
             var marker = System.IO.Path.Combine(directory.Path, "task-ran.txt");
             Assert.True(File.Exists(marker), "The ordinary-path control did not execute.");
             File.Delete(marker);
+            File.Delete(System.IO.Path.Combine(directory.Path, "task-pid.txt"));
             var enabled = module.SetEnabled(true, DateTimeOffset.UtcNow);
             Assert.True(enabled.Success, enabled.Error);
             Assert.Equal(ExecutableProtection.Safe, module.State.Protection);
@@ -54,13 +56,32 @@ public class AutostartWindowsTests
             Assert.True(File.Exists(marker), "The protected fixture did not execute. " +
                 runner.Run(["/Query", "/TN", name, "/V", "/FO", "LIST"]).Output);
             Assert.Equal("ok", File.ReadAllText(marker));
+            await WaitForFixtureExit(directory.Path);
             Assert.True(module.SetEnabled(false, DateTimeOffset.UtcNow).Success);
             Assert.Equal(TaskPresence.Missing, manager.Probe().Presence);
         }
         finally
         {
-            runner.Run(["/Delete", "/TN", name, "/F"]);
-            Assert.Equal(TaskPresence.Missing, manager.Probe().Presence);
+            try { await WaitForFixtureExit(directory.Path); }
+            finally
+            {
+                runner.Run(["/Delete", "/TN", name, "/F"]);
+                Assert.Equal(TaskPresence.Missing, manager.Probe().Presence);
+            }
+        }
+    }
+
+    private static async Task WaitForFixtureExit(string directory)
+    {
+        var pidFile = System.IO.Path.Combine(directory, "task-pid.txt");
+        if (!File.Exists(pidFile)) return;
+        var pid = int.Parse(File.ReadAllText(pidFile), System.Globalization.CultureInfo.InvariantCulture);
+        Process process;
+        try { process = Process.GetProcessById(pid); }
+        catch (ArgumentException) { return; } // The fixture has already exited.
+        using (process)
+        {
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
         }
     }
 
