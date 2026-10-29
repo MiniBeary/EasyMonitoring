@@ -15,7 +15,7 @@
 ### Итоговая проверка 2026-10-29
 
 - [x] `dotnet build EasyMonitoring.sln -c Release --nologo` — 0 ошибок, 0 предупреждений.
-- [x] `dotnet test EasyMonitoring.sln -c Release --no-build --nologo` — 73 Core + 47 App = **120/120**, пропусков нет; реальные Windows integration-тесты выполнены с повышением прав.
+- [x] `dotnet test EasyMonitoring.sln -c Release --no-build --nologo` — 73 Core + 48 App = **121/121**, пропусков нет; реальные Windows integration-тесты выполнены с повышением прав.
 - [x] `dotnet publish src/EasyMonitoring.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o artifacts/publish` — успешно.
 - [x] Опубликованный EXE: `--diagnostics` и `--ui-check` — exit 0.
 - [x] Опубликованный EXE из пользовательской папки: `--autostart-check` — ожидаемый exit 1, регистрация отклонена, `Cleanup: removed=True`.
@@ -23,6 +23,7 @@
 - [x] В Windows integration-тесте зарегистрированная задача действительно выполнила marker-программу из защищённого пути; проверялся путь с пробелами, кириллицей и `&`.
 - [x] После диагностики XML/код запроса штатной задачи `EasyMonitoring` не изменились. Изолированные задачи и временные защищённые папки удалены.
 - [x] Независимый разбор обнаружил ошибку классификации непроверяемого пути как Unsafe. Добавлен воспроизводящий тест через guard → adapter → Core; после исправления такие пути дают Unknown и не запускают миграционное удаление.
+- [x] Первый CI-прогон обнаружил потерю кириллицы в выводе `schtasks`. Контроль с CP437 воспроизвёл `????`; XML-запрос теперь использует отдельную скрытую UTF-8 консоль. Проверены сохранность кодовой страницы родителя, правильный HRESULT и отказ shell-символам в аргументах запроса.
 - [x] Проверены локальные ссылки README, наличие скриншота, блоки команд и актуальный релиз: `v1.0.1` от 2026-10-20. Исправления этой ветки ещё не опубликованы.
 - Новых сравнительных замеров производительности нет. Видимость иконки, DPI и запуск после настоящего входа в Windows остаются ручными проверками; hidden UI diagnostics их не подтверждают.
 

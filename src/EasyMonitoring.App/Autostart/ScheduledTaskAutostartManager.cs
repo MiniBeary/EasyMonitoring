@@ -5,6 +5,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using EasyMonitoring.App.Logging;
+using EasyMonitoring.App.Native;
 using EasyMonitoring.Core.Autostart;
 
 namespace EasyMonitoring.App.Autostart;
@@ -219,6 +220,8 @@ internal sealed class ScheduledTaskCommandRunner : IScheduledTaskCommandRunner
 {
     public ScheduledTaskCommandResult Run(IReadOnlyList<string> arguments)
     {
+        if (arguments.Count > 0 && arguments[0] == "/Query" && arguments.Contains("/XML"))
+            return Utf8TaskQuery.Run(arguments);
         var startInfo = new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.SystemDirectory, "schtasks.exe"),

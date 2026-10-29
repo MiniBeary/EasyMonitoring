@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Xml.Linq;
 using EasyMonitoring.App.Autostart;
+using EasyMonitoring.App.Native;
 using EasyMonitoring.Core.Autostart;
 
 namespace EasyMonitoring.App.Tests;
@@ -34,8 +36,14 @@ public class AutostartWindowsTests
             var enabled = module.SetEnabled(true, DateTimeOffset.UtcNow);
             Assert.True(enabled.Success, enabled.Error);
             Assert.Equal(ExecutableProtection.Safe, module.State.Protection);
+            var originalCodePage = GetConsoleOutputCP();
+            var legacyQuery = Utf8TaskQuery.Run(["/Query", "/TN", name, "/XML", "/HRESULT"], codePage: 437);
+            Assert.True(legacyQuery.Success, legacyQuery.Output);
+            Assert.DoesNotContain(executable, legacyQuery.Output);
+            Assert.Equal(originalCodePage, GetConsoleOutputCP());
             var xml = runner.Run(["/Query", "/TN", name, "/XML", "/HRESULT"]);
             Assert.True(xml.Success, xml.Output);
+            Assert.Equal(originalCodePage, GetConsoleOutputCP());
             Assert.Equal(executable, XDocument.Parse(xml.Output).Descendants(
                 XName.Get("Command", "http://schemas.microsoft.com/windows/2004/02/mit/task")).Single().Value);
             var run = runner.Run(["/Run", "/TN", name]);
@@ -103,6 +111,17 @@ public class AutostartWindowsTests
         }
         finally { runner.Run(["/Delete", "/TN", name, "/F"]); }
     }
+
+    [Fact]
+    public void Xml_query_does_not_accept_shell_metacharacters()
+    {
+        var result = new ScheduledTaskCommandRunner().Run(["/Query", "/TN", "EasyMonitoring&whoami", "/XML", "/HRESULT"]);
+        Assert.Null(result.ExitCode);
+        Assert.Equal("Unsupported task query arguments.", result.Output);
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetConsoleOutputCP();
 
     private static void RunSubst(string drive, string target)
     {
