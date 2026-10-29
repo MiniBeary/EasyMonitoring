@@ -12,7 +12,7 @@ public class AutostartStateModuleTests
     {
         var manager = new FakeAutostartManager
         {
-            ProbeResult = new AutostartProbe(true, true, Health),
+            ProbeResult = Known(true),
         };
         var module = new AutostartStateModule(manager);
 
@@ -70,7 +70,7 @@ public class AutostartStateModuleTests
     {
         var manager = new FakeAutostartManager
         {
-            ProbeResult = new AutostartProbe(true, true, Health),
+            ProbeResult = Known(true),
         };
         var module = new AutostartStateModule(manager);
 
@@ -121,6 +121,9 @@ public class AutostartStateModuleTests
         };
         var module = new AutostartStateModule(manager);
 
+        Assert.False(module.SetEnabled(true, Now).Success);
+        Assert.Equal(0, manager.EnableCalls);
+        manager.ProbeResult = Known(false);
         var result = module.SetEnabled(true, Now);
 
         Assert.True(result.Success);
@@ -141,9 +144,14 @@ public class AutostartStateModuleTests
         Assert.Equal("probe failed", state.LastError);
     }
 
+    private static AutostartProbe Known(bool enabled) => new(true, enabled, Health,
+        Presence: enabled ? TaskPresence.Present : TaskPresence.Missing,
+        Ownership: enabled ? TaskOwnership.CurrentUser : TaskOwnership.Unknown,
+        Protection: enabled ? ExecutableProtection.Safe : ExecutableProtection.Unknown);
+
     private sealed class FakeAutostartManager : IAutostartManager
     {
-        public AutostartProbe ProbeResult { get; set; } = new(true, false);
+        public AutostartProbe ProbeResult { get; set; } = Known(false);
 
         public AutostartResult EnableResult { get; set; } = new(true);
 
@@ -175,7 +183,7 @@ public class AutostartStateModuleTests
 
             if (EnableResult.Success)
             {
-                ProbeResult = new AutostartProbe(true, true, Health);
+                ProbeResult = Known(true);
             }
 
             return EnableResult;
@@ -187,7 +195,7 @@ public class AutostartStateModuleTests
 
             if (DisableResult.Success)
             {
-                ProbeResult = new AutostartProbe(true, false, Health);
+                ProbeResult = Known(false);
             }
 
             return DisableResult;

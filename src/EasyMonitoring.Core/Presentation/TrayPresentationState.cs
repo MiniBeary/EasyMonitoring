@@ -78,7 +78,7 @@ public sealed class TrayPresentationState
             : fallbackChecked ?? AutostartChecked;
         AutostartEnabled = true;
         AutostartStateLoaded = true;
-        AutostartError = state.IsKnown ? null : state.LastError;
+        AutostartError = state.LastError;
     }
 
     public void SetAutostartEnabled(bool enabled)

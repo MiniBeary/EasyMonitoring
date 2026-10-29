@@ -96,7 +96,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
-        using var context = new TrayApplicationContext(showTrayIcon: false);
+        using var context = new TrayApplicationContext(showTrayIcon: false, repairUnsafeAutostart: false);
         using var timer = new System.Windows.Forms.Timer
         {
             Interval = 250,
@@ -149,7 +149,8 @@ internal static class Program
 
     private static int RunAutostartCheck()
     {
-        var module = new AutostartStateModule(new ScheduledTaskAutostartManager());
+        var manager = new ScheduledTaskAutostartManager($"EasyMonitoring.Diagnostics.{Guid.NewGuid():N}");
+        var module = new AutostartStateModule(manager);
 
         var lines = new List<string>
         {
@@ -166,9 +167,8 @@ internal static class Program
             return 1;
         }
 
-        var initialEnabled = initial.IsEnabled;
         var success = false;
-        var restored = true;
+        var cleanedUp = true;
 
         try
         {
@@ -204,26 +204,21 @@ internal static class Program
         {
             try
             {
-                var current = module.Refresh(DateTimeOffset.UtcNow, force: true);
-                if (initialEnabled && current.IsKnown && !current.IsEnabled)
-                {
-                    var restore = module.SetEnabled(true, DateTimeOffset.UtcNow);
-                    var restoredState = module.State;
-                    restored = restore.Success && restoredState.IsKnown && restoredState.IsEnabled;
-                    lines.Add($"Restore: success={restore.Success} error={restore.Error ?? "none"}");
-                }
+                manager.Disable();
+                cleanedUp = manager.Probe().Presence == TaskPresence.Missing;
+                lines.Add($"Cleanup: removed={cleanedUp}");
             }
             catch (Exception exception)
             {
-                restored = false;
-                AppLog.Error("Failed to restore the initial autostart state.", exception);
-                lines.Add($"Restore: error={exception.Message}");
+                cleanedUp = false;
+                AppLog.Error("Failed to remove the diagnostics task.", exception);
+                lines.Add($"Cleanup: error={exception.Message}");
             }
         }
 
         WriteAutostartDiagnostics(lines);
 
-        return success && restored ? 0 : 1;
+        return success && cleanedUp ? 0 : 1;
     }
 
     private static string FormatState(EasyMonitoring.Core.Autostart.AutostartState state)

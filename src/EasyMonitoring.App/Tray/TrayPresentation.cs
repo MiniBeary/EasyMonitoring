@@ -150,6 +150,13 @@ internal sealed class TrayPresentation : IDisposable
         }
     }
 
+    public void ShowAutostartNotice(string message)
+    {
+        AppLog.Warning(message);
+        if (_notifyIcon.Visible)
+            _notifyIcon.ShowBalloonTip(5000, "EasyMonitoring", message, ToolTipIcon.Warning);
+    }
+
     public TrayDiagnostics GetDiagnostics()
     {
         return new TrayDiagnostics(

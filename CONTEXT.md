@@ -9,6 +9,8 @@
 - **Sensor binding** — resolving a stable `SensorId`/`HardwareId` in Core and mapping it to a live LHM `ISensor`/`IHardware` in the App adapter. Binding happens once; reads do not search by name.
 - **Tray host** — composition and lifecycle module. It owns the sampler, autostart state module, presentation adapter, and shutdown order.
 - **Tray presentation** — display state and the thin WinForms adapter. `TrayPresentationState` owns text, animation, and autostart display; `TrayPresentation` applies it to `NotifyIcon` and the menu.
+- **Executable protection** — a Windows observation of owner/DACL and path identity for the exe and parents: safe, unsafe, or unknown. Unknown refuses registration without authorizing legacy-task removal.
+- **Task presence and ownership** — missing/present/unknown and current-SID/foreign/unknown, independent of enabled state. A disabled task is still present.
 
 ## Invariants
 
@@ -18,5 +20,9 @@
 - Missing readings are held for one cycle, then become `N/A`; GPU averages only fresh slow samples.
 - CPU temperature falls back only to recognized CPU sensors; an unrelated temperature is not a CPU temperature.
 - Autostart is an elevated Task Scheduler task with `InteractiveToken`, `HighestAvailable`, and a logon trigger.
+- Mutations are reconciled only by Core. Only query HRESULT `0x80070002` proves absence; adapter mutations do not post-probe.
+- Registration requires handle-verified executable protection and protected XML staging. A confirmed current-SID unsafe legacy task is removed and rechecked; foreign/unknown tasks are not overwritten.
+- The sampler owns eventual resource cleanup after a timed-out stop. The two-second UI shutdown bound does not authorize disposal under an unfinished read.
+- `--ui-check` uses read-only autostart inspection; `--autostart-check` uses a unique diagnostic task with cleanup.
 - The UI format stays `CPU: 23% | 58 °C`, `RAM: 8.2 / 31.9 GB (26%)`; README is English and internal docs are Russian.
 - `--diagnostics`, `--ui-check`, and `--autostart-check` keep their current output keys and bypass the single-instance mutex.

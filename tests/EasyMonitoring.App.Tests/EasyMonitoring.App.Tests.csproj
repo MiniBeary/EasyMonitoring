@@ -22,6 +22,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EasyMonitoring.App\EasyMonitoring.App.csproj" />
+    <ProjectReference Include="..\EasyMonitoring.TaskFixture\EasyMonitoring.TaskFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Target Name="CopyTaskFixture" AfterTargets="Build">
+    <ItemGroup>
+      <TaskFixtureFiles Include="..\EasyMonitoring.TaskFixture\bin\$(Configuration)\net9.0\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TaskFixtureFiles)" DestinationFolder="$(OutDir)TaskFixture" />
+  </Target>
 
 </Project>
