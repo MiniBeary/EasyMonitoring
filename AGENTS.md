@@ -8,6 +8,7 @@ Windows-only .NET 9 WinForms tray monitor. It has no main window: `Program.Main`
 - `src/EasyMonitoring.App` — Windows/LHM adapters and tray UI (`net9.0-windows`, x64).
 - `tests/EasyMonitoring.Core.Tests` — xUnit tests for Core.
 - `tests/EasyMonitoring.App.Tests` — Windows xUnit tests for the tray presentation adapter (`net9.0-windows`).
+- `tests/EasyMonitoring.TaskFixture` — inert WinExe for isolated scheduler tests; writes a marker and exits.
 - Published exe is `artifacts/publish/EasyMonitoring.exe` because the App project overrides `AssemblyName`; it is git-ignored.
 
 ## Commands
@@ -35,7 +36,7 @@ CI runs on GitHub Actions: `.github/workflows/build.yml` restores, builds, and t
 - CPU temperature requires the **PawnIO 2.2.0** driver. The LHM NuGet package embeds PawnIO modules but does **not** install the driver:
   `winget install --id namazso.PawnIO -e`
 - Without PawnIO, CPU temp is `N/A` (LHM reports 0); CPU load, GPU, and RAM still work.
-- The app and QA modes run elevated via `app.manifest` (`requireAdministrator`). Build/test do not require admin.
+- The app and QA modes run elevated via `app.manifest` (`requireAdministrator`). Build/test do not require admin; administrator-only integration tests are explicitly skipped without elevation.
 - Do not publish while the app is running: the locked exe causes `MSB3026`/`MSB3027`/`MSB3021`.
 
 ## Non-obvious invariants
@@ -49,10 +50,15 @@ CI runs on GitHub Actions: `.github/workflows/build.yml` restores, builds, and t
 - A temperature of 0 or outside 0–150 °C is treated as missing, not as a real reading.
 - DPI is configured by `ApplicationHighDpiMode=PerMonitorV2` in the App csproj. Do not add `dpiAware`/`dpiAwareness` back to `app.manifest`; the SDK emits warning `WFO0003`.
 - In `Program.Main`, call `Application.SetUnhandledExceptionMode` before creating controls or a `WindowsFormsSynchronizationContext`, otherwise it throws. The fallback context in `TrayApplicationContext` is intentional: `SynchronizationContext.Current` is null before `Application.Run`.
-- The tray app has no `Form`. `TrayApplicationContext` owns composition/lifecycle; `TrayPresentation` owns WinForms controls. `Exit` stops and awaits the sampler before disposing presentation/icons/menu/`NotifyIcon`, then calls `ExitThread`; keep that order intact.
+- The tray app has no `Form`. `TrayApplicationContext` owns composition/lifecycle; `TrayPresentation` owns WinForms controls. `Exit` requests sampler shutdown and awaits its bounded two-second stop before disposing presentation and calling `ExitThread`. Cleanup of a slow read stays with the worker; late results are suppressed. Never dispose LHM underneath a read.
 - UI text and README are English with invariant-culture numbers and `°C`; internal docs are Russian. Preserve formats such as `CPU: 23% | 58 °C` and `RAM: 8.2 / 31.9 GB (26%)`. `TrayPresentationState` owns those strings; the WinForms adapter only applies them.
 - Menu theme is custom: `App/UI/MenuTheme` + `EasyMonitoringMenuRenderer`. Disabled menu text must stay white; the renderer overrides `OnRenderItemText` and draws the check mark. Do not replace it with default system colors.
 - Autostart is a Task Scheduler task named `EasyMonitoring`, created from XML via `schtasks /Create`, with `InteractiveToken` and `HighestAvailable` so it starts elevated without a logon UAC prompt. `AutostartStateModule` owns actual/desired/unknown state and reconciliation; the adapter returns `AutostartProbe`/health. The menu checkbox is `Start with Windows`; unknown must remain retryable, not silently disabled.
+- Observations also carry presence, ownership and executable protection. Only `/Query /XML /HRESULT` exit `0x80070002` proves absence; a disabled task is still present. Core owns the pre/post probes, including after command exceptions. Adapter Enable/Disable do not reconcile.
+- XML queries run in a private hidden UTF-8 console: schtasks otherwise loses Unicode paths on legacy console pages. The cmd boundary accepts only ASCII switches/task identifiers, uses absolute system executables, disables AutoRun/delayed expansion and never changes the caller's code page. Mutation arguments still use direct ProcessStartInfo.ArgumentList.
+- `ProtectedExecutablePath` checks no-follow handles, owner SIDs and DACLs for exe and parents. Only SYSTEM, Administrators and TrustedInstaller may modify code/path. Reject ambiguous/network/SUBST/reparse paths. Conflicting/unsupported ACLs are unknown, not authorization for legacy deletion. Never substitute a Program Files prefix check or the elevated token's access.
+- Validate physical identity with volume handles. Task Scheduler rejected volume-GUID Exec paths in the real fixture; persist only a Mount Manager drive path matched to the opened NT volume. XML staging uses the protected volume path, CreateNew, administrator/System-only ACL and read lock through the bounded 15-second command, never ordinary user temp.
+- Refresh removes only confirmed current-SID unsafe legacy tasks, verifies absence and notifies. Foreign/uncertain tasks stay untouched. `Inspect` is read-only for UI diagnostics.
 - Single-instance mutex is `Local\EasyMonitoring.SingleInstance`. `--diagnostics`, `--ui-check`, and `--autostart-check` intentionally bypass it and run headless.
 
 ## Verification helpers
@@ -62,14 +68,14 @@ After building or publishing:
 ```powershell
 .\artifacts\publish\EasyMonitoring.exe --diagnostics     # metrics; writes diagnostics.txt and exits
 .\artifacts\publish\EasyMonitoring.exe --ui-check        # tray/menu/theme/animation; writes ui-diagnostics.txt and exits
-.\artifacts\publish\EasyMonitoring.exe --autostart-check # temporarily creates/removes the real task; writes autostart-diagnostics.txt
+.\artifacts\publish\EasyMonitoring.exe --autostart-check # unique diagnostic task; requires protected exe location
 ```
 
 `--ui-check` also waits for the cached autostart state. It reads a `TrayDiagnostics` record; keep the existing keys/format stable. Outputs and error log live in `%LOCALAPPDATA%\EasyMonitoring\`. Use `docs/qa-checklist.md` for current results and the remaining manual checks.
 
 ## Repo state
 
-- GitHub: `MiniBeary/EasyMonitoring` (public), default branch `main`; local commits use `MiniBear <184402887+MiniBeary@users.noreply.github.com>`.
+- GitHub: `MiniBeary/EasyMonitoring`, default branch `main`; visibility is managed on GitHub. Local commits use `MiniBear <184402887+MiniBeary@users.noreply.github.com>`.
 - `bin/`, `obj/`, `artifacts/`, `*.user`, and logs are ignored. Do not commit the published exe.
 - `README.md` is the user-facing guide; `docs/easymonitoring-plan.md` is the implementation plan/status; `docs/qa-checklist.md` is the current QA record; `docs/runcat365-3.6.0-analysis.md` is reference analysis, not a build input.
 - Release process: push a `v*` tag; `.github/workflows/release.yml` publishes the single-file exe, writes `SHA256SUMS.txt`, and creates a GitHub release. Do not upload the exe manually unless the workflow fails.

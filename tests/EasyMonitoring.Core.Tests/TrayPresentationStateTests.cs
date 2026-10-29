@@ -7,6 +7,14 @@ namespace EasyMonitoring.Core.Tests;
 public class TrayPresentationStateTests
 {
     [Fact]
+    public void Known_state_does_not_hide_a_failed_safety_cleanup()
+    {
+        var state = new TrayPresentationState(5);
+        state.ApplyAutostart(new AutostartState(false, DateTimeOffset.UtcNow, "unsafe task removal failed"));
+        Assert.Equal("unsafe task removal failed", state.AutostartError);
+    }
+
+    [Fact]
     public void Initial_state_uses_na_text_and_slow_animation()
     {
         var state = new TrayPresentationState(frameCount: 5);

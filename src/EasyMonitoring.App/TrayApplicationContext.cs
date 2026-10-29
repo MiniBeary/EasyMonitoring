@@ -15,9 +15,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool _autostartBusy;
     private bool _disposed;
     private bool _exiting;
+    private string? _lastAutostartMessage;
+    private readonly bool _repairUnsafeAutostart;
 
-    internal TrayApplicationContext(bool showTrayIcon = true)
+    internal TrayApplicationContext(bool showTrayIcon = true, bool repairUnsafeAutostart = true)
     {
+        _repairUnsafeAutostart = repairUnsafeAutostart;
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         _presentation = new TrayPresentation(showTrayIcon);
@@ -64,7 +67,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        var state = _autostart.Refresh(DateTimeOffset.UtcNow);
+        var state = _repairUnsafeAutostart
+            ? _autostart.Refresh(DateTimeOffset.UtcNow)
+            : _autostart.Inspect(DateTimeOffset.UtcNow);
 
         _uiContext.Post(_ =>
         {
@@ -74,6 +79,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
 
             _presentation.ApplyAutostart(state, _presentation.AutostartChecked);
+            var message = state.Notice ?? state.LastError;
+            if (message is not null && message != _lastAutostartMessage)
+            {
+                _lastAutostartMessage = message;
+                _presentation.ShowAutostartNotice(message);
+            }
         }, null);
     }
 

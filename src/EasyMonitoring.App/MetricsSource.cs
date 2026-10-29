@@ -4,7 +4,9 @@ using EasyMonitoring.Core.Metrics;
 
 namespace EasyMonitoring.App;
 
-internal sealed class MetricsSource : IMetricsSource, IDisposable
+internal interface IDisposableMetricsSource : IMetricsSource, IDisposable;
+
+internal sealed class MetricsSource : IDisposableMetricsSource
 {
     private readonly CpuLoadCalculator _cpuLoadCalculator = new();
     private readonly LhmMetricsSource _lhm = new();
